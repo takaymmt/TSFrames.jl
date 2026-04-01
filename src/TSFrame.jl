@@ -363,9 +363,14 @@ struct TSFrame
 
     # From DataFrame, external index
     function TSFrame(coredata::DataFrame, index::AbstractVector{T}; issorted = false, copycols = true) where {T<:Union{Int, TimeType}}
-        sorted_index = issorted ? (copycols ? copy(index) : index) : sort(index)
-
-        cd = copy(coredata)
+        if issorted
+            sorted_index = copycols ? copy(index) : index
+            cd = copy(coredata)
+        else
+            perm = sortperm(index)
+            sorted_index = index[perm]
+            cd = coredata[perm, :]
+        end
         insertcols!(cd, 1, :Index => sorted_index, after=false, copycols = copycols)
 
         new(cd)

@@ -266,6 +266,19 @@ end
     @test ts[3, :x1] == 30.0
 end
 
+@testset "TSFrame from external vector with unsorted index aligns data" begin
+    # Regression test: external index vector must sort both index AND data rows together
+    dates = [Date(2020,1,3), Date(2020,1,1), Date(2020,1,2)]
+    values = [30.0, 10.0, 20.0]
+    df = DataFrame(x1 = values)
+    ts = TSFrame(df, dates)
+    @test issorted(index(ts))
+    @test index(ts) == [Date(2020,1,1), Date(2020,1,2), Date(2020,1,3)]
+    @test ts.coredata[1, :x1] == 10.0
+    @test ts.coredata[2, :x1] == 20.0
+    @test ts.coredata[3, :x1] == 30.0
+end
+
 @testset "TSFrame from DataFrame with unsorted index column" begin
     # When constructing from a DataFrame with an index *column*, the
     # DataFrame is sorted by the index column so data stays aligned.
