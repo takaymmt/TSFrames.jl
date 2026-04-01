@@ -172,3 +172,121 @@ test_vector()
 test_array()
 test_colnames()
 test_empty_timeframe_cons()
+
+@testset "empty TSFrame from empty DataFrame" begin
+    df = DataFrame(Index=Date[], x1=Float64[])
+    ts = TSFrame(df)
+    @test TSFrames.nrow(ts) == 0
+    @test TSFrames.ncol(ts) == 1
+    @test length(index(ts)) == 0
+    @test eltype(index(ts)) == Date
+
+    # Empty DataFrame with Int index
+    df_int = DataFrame(Index=Int[], x1=Float64[])
+    ts_int = TSFrame(df_int)
+    @test TSFrames.nrow(ts_int) == 0
+    @test TSFrames.ncol(ts_int) == 1
+    @test length(index(ts_int)) == 0
+    @test eltype(index(ts_int)) == Int
+end
+
+@testset "empty TSFrame from typed constructor with column specs" begin
+    # Typed constructor with column type/name pairs (complementing test_empty_timeframe_cons)
+    ts = TSFrame(Date, [(Float64, :price), (Int, :volume)])
+    @test TSFrames.nrow(ts) == 0
+    @test TSFrames.ncol(ts) == 2
+    @test length(index(ts)) == 0
+    @test eltype(index(ts)) == Date
+    @test eltype(ts.coredata[:, :price]) == Float64
+    @test eltype(ts.coredata[:, :volume]) == Int
+
+    # Using String column names
+    ts_str = TSFrame(Int, [(String, "name"), (Float64, "score")])
+    @test TSFrames.nrow(ts_str) == 0
+    @test TSFrames.ncol(ts_str) == 2
+    @test eltype(index(ts_str)) == Int
+end
+
+@testset "single row TSFrame" begin
+    ts = TSFrame(DataFrame(Index=[Date(2020, 1, 1)], x1=[42.0]))
+    @test TSFrames.nrow(ts) == 1
+    @test TSFrames.ncol(ts) == 1
+    @test first(index(ts)) == Date(2020, 1, 1)
+    @test ts[1, :x1] == 42.0
+
+    # Single row with integer index
+    ts_int = TSFrame([99.0], [1])
+    @test TSFrames.nrow(ts_int) == 1
+    @test TSFrames.ncol(ts_int) == 1
+    @test first(index(ts_int)) == 1
+    @test ts_int[1, :x1] == 99.0
+end
+
+@testset "TSFrame with missing values in data" begin
+    ts = TSFrame(DataFrame(Index=[1, 2, 3], x1=[1.0, missing, 3.0]))
+    @test TSFrames.nrow(ts) == 3
+    @test TSFrames.ncol(ts) == 1
+    @test ts[1, :x1] == 1.0
+    @test ismissing(ts[2, :x1])
+    @test ts[3, :x1] == 3.0
+    @test eltype(ts.coredata[:, :x1]) == Union{Missing, Float64}
+
+    # Multiple columns with missing
+    ts2 = TSFrame(DataFrame(Index=[1, 2], x1=[missing, 1], x2=[2.0, missing]))
+    @test TSFrames.nrow(ts2) == 2
+    @test TSFrames.ncol(ts2) == 2
+    @test ismissing(ts2[1, :x1])
+    @test ismissing(ts2[2, :x2])
+end
+
+@testset "TSFrame with duplicate index values" begin
+    # Constructor does not reject duplicate index values; it sorts them
+    ts = TSFrame(DataFrame(Index=[1, 1, 2], x1=[10.0, 20.0, 30.0]))
+    @test TSFrames.nrow(ts) == 3
+    @test TSFrames.ncol(ts) == 1
+    @test index(ts) == [1, 1, 2]
+    @test issorted(index(ts))
+
+    # Duplicate Date index
+    ts_date = TSFrame(DataFrame(Index=[Date(2020,1,1), Date(2020,1,1), Date(2020,1,2)],
+                                x1=[1.0, 2.0, 3.0]))
+    @test TSFrames.nrow(ts_date) == 3
+    @test index(ts_date)[1] == index(ts_date)[2]
+end
+
+@testset "TSFrame copycols=false" begin
+    idx = [1, 2, 3]
+    vals = [10.0, 20.0, 30.0]
+    df = DataFrame(Index=idx, x1=vals)
+    ts = TSFrame(df; copycols=false)
+    @test typeof(ts) == TSFrames.TSFrame
+    @test TSFrames.nrow(ts) == 3
+    @test TSFrames.ncol(ts) == 1
+    @test ts[1, :x1] == 10.0
+    @test ts[3, :x1] == 30.0
+end
+
+@testset "TSFrame from DataFrame with unsorted index column" begin
+    # When constructing from a DataFrame with an index *column*, the
+    # DataFrame is sorted by the index column so data stays aligned.
+    df = DataFrame(Index=[3, 1, 2], x1=[30.0, 10.0, 20.0])
+    ts = TSFrame(df)
+    @test TSFrames.nrow(ts) == 3
+    @test TSFrames.ncol(ts) == 1
+    @test issorted(index(ts))
+    @test index(ts) == [1, 2, 3]
+    # Data is reordered together with index (DataFrame sort)
+    @test ts.coredata[1, :x1] == 10.0
+    @test ts.coredata[2, :x1] == 20.0
+    @test ts.coredata[3, :x1] == 30.0
+
+    # Same with Date index column
+    df_date = DataFrame(Index=[Date(2020,1,3), Date(2020,1,1), Date(2020,1,2)],
+                        x1=[30.0, 10.0, 20.0])
+    ts_date = TSFrame(df_date)
+    @test issorted(index(ts_date))
+    @test index(ts_date) == [Date(2020,1,1), Date(2020,1,2), Date(2020,1,3)]
+    @test ts_date.coredata[1, :x1] == 10.0
+    @test ts_date.coredata[2, :x1] == 20.0
+    @test ts_date.coredata[3, :x1] == 30.0
+end

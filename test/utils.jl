@@ -315,3 +315,133 @@ TSFrames.rename!(ts, pairs_string_string...)
 ts = TSFrame(Date; n=NUM_COLUMNS)
 TSFrames.rename!(uppercase, ts)
 @test isequal(propertynames(ts.coredata), vcat([:Index], Symbol.("X" * string(i) for i in 1:NUM_COLUMNS)))
+
+###
+# iterate()
+@testset "iterate" begin
+    ts_iter = TSFrame(DataFrame(a=[10, 20, 30], b=[1.0, 2.0, 3.0]), [1, 2, 3])
+
+    # iterate yields expected number of items
+    count = 0
+    for row in ts_iter
+        count += 1
+    end
+    @test count == 3
+
+    # each yielded item is a single-row TSFrame
+    first_item = first(collect(ts_iter))
+    @test first_item isa TSFrame
+    @test TSFrames.nrow(first_item) == 1
+
+    # collect works and returns the correct number of elements
+    collected = collect(ts_iter)
+    @test length(collected) == 3
+
+    # collected elements have correct data
+    @test collected[1].coredata[1, :a] == "10"  || collected[1].coredata[1, :a] == 10
+    @test collected[3].coredata[1, :a] == "30"  || collected[3].coredata[1, :a] == 30
+
+    # iterate on empty-like single row TSFrame
+    ts_single = TSFrame(DataFrame(x=[42]), [1])
+    items = collect(ts_single)
+    @test length(items) == 1
+    @test TSFrames.nrow(items[1]) == 1
+end
+###
+
+###
+# ndims()
+@testset "ndims" begin
+    # ndims on type
+    @test ndims(TSFrame) == 2
+
+    # ndims on instance (dispatches via Type, since ndims is defined for Type{TSFrame})
+    ts_nd = TSFrame(DataFrame(a=[1, 2], b=[3, 4]), [1, 2])
+    @test ndims(typeof(ts_nd)) == 2
+end
+###
+
+###
+# ==(equality)
+@testset "==" begin
+    ts_eq1 = TSFrame(DataFrame(a=[1, 2, 3], b=[4.0, 5.0, 6.0]), [1, 2, 3])
+    ts_eq2 = TSFrame(DataFrame(a=[1, 2, 3], b=[4.0, 5.0, 6.0]), [1, 2, 3])
+
+    # identical TSFrames are equal
+    @test ts_eq1 == ts_eq2
+
+    # different data makes them not equal
+    ts_eq3 = TSFrame(DataFrame(a=[1, 2, 99], b=[4.0, 5.0, 6.0]), [1, 2, 3])
+    @test !(ts_eq1 == ts_eq3)
+
+    # different index makes them not equal
+    ts_eq4 = TSFrame(DataFrame(a=[1, 2, 3], b=[4.0, 5.0, 6.0]), [1, 2, 4])
+    @test !(ts_eq1 == ts_eq4)
+
+    # == with missing throws (due to Bool return type annotation on ==)
+    ts_m1 = TSFrame(DataFrame(a=[1, missing, 3]), [1, 2, 3])
+    ts_m2 = TSFrame(DataFrame(a=[1, missing, 3]), [1, 2, 3])
+    @test_throws MethodError (ts_m1 == ts_m2)
+end
+###
+
+###
+# isequal()
+@testset "isequal" begin
+    ts_ie1 = TSFrame(DataFrame(a=[1, 2, 3], b=[4.0, 5.0, 6.0]), [1, 2, 3])
+    ts_ie2 = TSFrame(DataFrame(a=[1, 2, 3], b=[4.0, 5.0, 6.0]), [1, 2, 3])
+
+    # identical TSFrames are isequal
+    @test isequal(ts_ie1, ts_ie2)
+
+    # self-equality
+    @test isequal(ts_ie1, ts_ie1)
+
+    # different data makes them not isequal
+    ts_ie3 = TSFrame(DataFrame(a=[1, 2, 99], b=[4.0, 5.0, 6.0]), [1, 2, 3])
+    @test !isequal(ts_ie1, ts_ie3)
+
+    # isequal handles missing correctly (missing is isequal to missing)
+    ts_im1 = TSFrame(DataFrame(a=[1, missing, 3]), [1, 2, 3])
+    ts_im2 = TSFrame(DataFrame(a=[1, missing, 3]), [1, 2, 3])
+    @test isequal(ts_im1, ts_im2)
+
+    # isequal returns false when missing vs non-missing
+    ts_im3 = TSFrame(DataFrame(a=[1, 2, 3]), [1, 2, 3])
+    @test !isequal(ts_im1, ts_im3)
+end
+###
+
+###
+# nr() / nc() aliases
+@testset "nr and nc aliases" begin
+    ts_alias = TSFrame(DataFrame(a=[1, 2, 3], b=[4, 5, 6]), [1, 2, 3])
+
+    # nr is alias for nrow
+    @test nr(ts_alias) == TSFrames.nrow(ts_alias)
+    @test nr(ts_alias) == 3
+
+    # nc is alias for ncol
+    @test nc(ts_alias) == TSFrames.ncol(ts_alias)
+    @test nc(ts_alias) == 2
+end
+###
+
+###
+# cbind / rbind aliases
+@testset "cbind and rbind aliases" begin
+    # cbind is alias for join
+    ts_cb1 = TSFrame(DataFrame(a=[1, 2, 3]), [1, 2, 3])
+    ts_cb2 = TSFrame(DataFrame(b=[4, 5, 6]), [1, 2, 3])
+    result_cb = cbind(ts_cb1, ts_cb2)
+    @test TSFrames.ncol(result_cb) == 2
+    @test TSFrames.nrow(result_cb) == 3
+
+    # rbind is alias for vcat
+    ts_rb1 = TSFrame(DataFrame(a=[1, 2]), [1, 2])
+    ts_rb2 = TSFrame(DataFrame(a=[3, 4]), [3, 4])
+    result_rb = rbind(ts_rb1, ts_rb2)
+    @test TSFrames.nrow(result_rb) == 4
+    @test TSFrames.ncol(result_rb) == 1
+end
+###

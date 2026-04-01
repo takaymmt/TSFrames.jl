@@ -150,3 +150,39 @@ ts_fivejoinrights = join(ts1, ts2, ts3, ts4, ts5; jointype=:JoinRight)
 @test ts_fivejoinrights[:, :x1_2] == ts3[1:DATA_SIZE, :x1]
 @test ts_fivejoinrights[:, :x1_3] == ts4[1:DATA_SIZE, :x1]
 @test ts_fivejoinrights[:, :x1_4] == ts5[1:DATA_SIZE, :x1]
+
+@testset "join non-overlapping indices" begin
+    dates_a = Date(2020, 1, 1) .+ Day.(0:4)
+    dates_b = Date(2020, 2, 1) .+ Day.(0:4)
+    ts_a = TSFrame(rand(5), dates_a)
+    ts_b = TSFrame(rand(5), dates_b)
+
+    # Inner join: no overlap -> 0 rows
+    ts_inner = join(ts_a, ts_b; jointype=:JoinInner)
+    @test TSFrames.nrow(ts_inner) == 0
+
+    # Outer join: all rows present, missing values where no match
+    ts_outer = join(ts_a, ts_b; jointype=:JoinOuter)
+    @test TSFrames.nrow(ts_outer) == 10
+    # ts_a values present for dates_a, missing for dates_b
+    for i in 1:5
+        @test !ismissing(ts_outer[i, :x1])
+        @test ismissing(ts_outer[i, :x1_1])
+    end
+    # ts_b values present for dates_b, missing for dates_a
+    for i in 6:10
+        @test ismissing(ts_outer[i, :x1])
+        @test !ismissing(ts_outer[i, :x1_1])
+    end
+end
+
+@testset "join empty result inner" begin
+    dates_c = Date(2021, 1, 1) .+ Day.(0:2)
+    dates_d = Date(2021, 6, 1) .+ Day.(0:2)
+    ts_c = TSFrame(rand(3), dates_c)
+    ts_d = TSFrame(rand(3), dates_d)
+
+    ts_empty_inner = join(ts_c, ts_d; jointype=:JoinInner)
+    @test TSFrames.nrow(ts_empty_inner) == 0
+    @test propertynames(ts_empty_inner.coredata) == [:Index, :x1, :x1_1]
+end

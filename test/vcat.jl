@@ -57,3 +57,33 @@ ts_union = TSFrames.vcat(ts1, ts2, colmerge=:union)
 @test ts_union[DATA_SIZE_1 + 1:DATA_SIZE_1 + DATA_SIZE_2, :x2] == ts2[:, :x2]
 @test isequal(Vector{Missing}(ts_union[1:DATA_SIZE_1, :x3]), fill(missing, DATA_SIZE_1))
 @test ts_union[DATA_SIZE_1 + 1:DATA_SIZE_1 + DATA_SIZE_2, :x3] == ts2[:, :x3]
+
+@testset "vcat overlapping index" begin
+    # Two TSFrames sharing some index values
+    overlap_dates_1 = Date(2010, 1, 1) .+ Day.(0:4)   # Jan 1-5
+    overlap_dates_2 = Date(2010, 1, 3) .+ Day.(0:4)   # Jan 3-7
+    vals1 = [1.0, 2.0, 3.0, 4.0, 5.0]
+    vals2 = [30.0, 40.0, 50.0, 60.0, 70.0]
+    ts_ov1 = TSFrame(DataFrame(Index = overlap_dates_1, x1 = vals1))
+    ts_ov2 = TSFrame(DataFrame(Index = overlap_dates_2, x1 = vals2))
+
+    # vcat simply concatenates rows; overlapping index values result in
+    # duplicate index entries (DataFrames.vcat does not deduplicate).
+    # TSFrame constructor sorts by Index, so duplicates are adjacent.
+    ts_ov = TSFrames.vcat(ts_ov1, ts_ov2)
+
+    # Total rows = sum of both (no dedup)
+    @test TSFrames.nrow(ts_ov) == 10
+
+    # The overlapping dates (Jan 3, 4, 5) appear twice each
+    idx = ts_ov[:, :Index]
+    @test count(==(Date(2010, 1, 3)), idx) == 2
+    @test count(==(Date(2010, 1, 4)), idx) == 2
+    @test count(==(Date(2010, 1, 5)), idx) == 2
+
+    # Non-overlapping dates appear once
+    @test count(==(Date(2010, 1, 1)), idx) == 1
+    @test count(==(Date(2010, 1, 2)), idx) == 1
+    @test count(==(Date(2010, 1, 6)), idx) == 1
+    @test count(==(Date(2010, 1, 7)), idx) == 1
+end

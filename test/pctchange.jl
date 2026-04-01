@@ -27,4 +27,36 @@ for periods in [DATA_SIZE, DATA_SIZE + 1]
     @test isequal(Vector{Missing}(pctchange_ts[1:DATA_SIZE, :x1]), fill(missing, DATA_SIZE))
 end
 
+@testset "pctchange multi-column" begin
+    dates_mc = Date(2007, 1, 1) .+ Day.(0:4)
+    col1 = [100.0, 110.0, 121.0, 133.1, 146.41]
+    col2 = [200.0, 220.0, 242.0, 266.2, 292.82]
+    ts_mc = TSFrame(DataFrame(Index = dates_mc, a = col1, b = col2))
 
+    pct_mc = pctchange(ts_mc)
+
+    # Index preserved
+    @test isequal(pct_mc[:, :Index], ts_mc[:, :Index])
+
+    # First row missing for both columns
+    @test ismissing(pct_mc[1, :a])
+    @test ismissing(pct_mc[1, :b])
+
+    # Remaining rows: pctchange applied to each column independently
+    for i in 2:5
+        expected_a = (col1[i] - col1[i - 1]) / abs(col1[i - 1])
+        expected_b = (col2[i] - col2[i - 1]) / abs(col2[i - 1])
+        @test floor(pct_mc[i, :a] * 100) == floor(expected_a * 100)
+        @test floor(pct_mc[i, :b] * 100) == floor(expected_b * 100)
+    end
+end
+
+@testset "pctchange single row" begin
+    ts_single = TSFrame(DataFrame(Index = [Date(2007, 1, 1)], x1 = [42.0]))
+
+    pct_single = pctchange(ts_single)
+
+    # Single row TSFrame: the only value should be missing
+    @test TSFrames.nrow(pct_single) == 1
+    @test ismissing(pct_single[1, :x1])
+end
