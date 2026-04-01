@@ -79,6 +79,5 @@ function diff(ts::TSFrame, periods::Int = 1)
         error("periods must be a postive int")
     end
     ddf = ts.coredata[:, Not(:Index)] .- TSFrames.lag(ts, periods).coredata[:, Not(:Index)]
-    insertcols!(ddf, 1, "Index" => ts.coredata[:, :Index])
-    TSFrame(ddf, :Index)
+    _wrap_with_index(ddf, index(ts))
 end

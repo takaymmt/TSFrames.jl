@@ -58,8 +58,9 @@ TSFrame(IndexType::DataType, cols::Vector{Tuple{DataType, S}}; issorted = false,
 ```
 
 When `issorted` is `true``, no sort operations are performed on the input.
-When `copycols` is `true`, the inputs are not copied, but placed directly in the TSFrame.  
-This can be dangerous, so please only set this to `false` if the input arrays 
+When `copycols` is `true` (default), the inputs are copied into the TSFrame.
+When `copycols` is `false`, the inputs are not copied but placed directly in the TSFrame.
+This can be dangerous, so please only set `copycols` to `false` if the input arrays
 will not be mutated later.
 
 `issorted = true, copycols = false` offers performance benefits, 
@@ -342,11 +343,6 @@ struct TSFrame
         if ! (eltype(coredata[!, index]) <: Union{Int, TimeType})
             throw(ArgumentError("only Int and TimeType index is supported"))
         end
-
-        if (DataFrames.ncol(coredata) == 1)
-            TSFrame(coredata, collect(Base.OneTo(DataFrames.nrow(coredata))); issorted = issorted, copycols = copycols)
-        end
-
 
         sorted_cd = issorted ? (copycols ? copy(coredata) : coredata) : sort(coredata, index)
 

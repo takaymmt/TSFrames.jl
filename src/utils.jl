@@ -1,3 +1,94 @@
+# ============================================================
+# Section: Size and Dimensions
+# ============================================================
+
+"""
+# Size methods
+
+```julia
+nrow(ts::TSFrame)
+nr(ts::TSFrame)
+```
+
+Return the number of rows of `ts`. `nr` is an alias for `nrow`.
+
+# Examples
+```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
+julia> ts = TSFrame(collect(1:10))
+julia> TSFrames.nrow(ts)
+10
+```
+"""
+function nrow(ts::TSFrame)
+    DataFrames.size(ts.coredata)[1]
+end
+# alias
+nr = TSFrames.nrow
+
+# Number of columns
+"""
+# Size methods
+
+```julia
+ncol(ts::TSFrame)
+```
+
+Return the number of columns of `ts`. `nc` is an alias for `ncol`.
+
+# Examples
+```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
+julia> using Random;
+
+julia> random(x) = rand(MersenneTwister(123), x);
+
+julia> TSFrames.ncol(TSFrame([random(100) random(100) random(100)]))
+3
+
+julia> nc(TSFrame([random(100) random(100) random(100)]))
+3
+```
+"""
+function ncol(ts::TSFrame)
+    DataFrames.size(ts.coredata)[2] - 1
+end
+# alias
+nc = TSFrames.ncol
+
+# Size of
+"""
+# Size methods
+```julia
+size(ts::TSFrame)
+```
+
+Return the number of rows and columns of `ts` as a tuple.
+
+# Examples
+```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
+julia> TSFrames.size(TSFrame([collect(1:100) collect(1:100) collect(1:100)]))
+(100, 3)
+```
+"""
+function size(ts::TSFrame)
+    nr = TSFrames.nrow(ts)
+    nc = TSFrames.ncol(ts)
+    (nr, nc)
+end
+
+function Base.lastindex(ts::TSFrame)
+    lastindex(index(ts))
+end
+
+function Base.length(ts::TSFrame)
+    TSFrames.nrow(ts)
+end
+
+Base.ndims(::Type{TSFrame}) = 2
+
+# ============================================================
+# Section: Display
+# ============================================================
+
 """
 # Summary statistics
 
@@ -84,86 +175,9 @@ function Base.summary(io::IO, ts::TSFrame)
     println("(", nr(ts), " x ", nc(ts), ") TSFrame")
 end
 
-"""
-# Size methods
-
-```julia
-nrow(ts::TSFrame)
-nr(ts::TSFrame)
-```
-
-Return the number of rows of `ts`. `nr` is an alias for `nrow`.
-
-# Examples
-```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
-julia> ts = TSFrame(collect(1:10))
-julia> TSFrames.nrow(ts)
-10
-```
-"""
-function nrow(ts::TSFrame)
-    DataFrames.size(ts.coredata)[1]
-end
-# alias
-nr = TSFrames.nrow
-
-function Base.lastindex(ts::TSFrame)
-    lastindex(index(ts))
-end
-
-function Base.length(ts::TSFrame)
-    TSFrames.nrow(ts)
-end
-
-# Number of columns
-"""
-# Size methods
-
-```julia
-ncol(ts::TSFrame)
-```
-
-Return the number of columns of `ts`. `nc` is an alias for `ncol`.
-
-# Examples
-```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
-julia> using Random;
-
-julia> random(x) = rand(MersenneTwister(123), x);
-
-julia> TSFrames.ncol(TSFrame([random(100) random(100) random(100)]))
-3
-
-julia> nc(TSFrame([random(100) random(100) random(100)]))
-3
-```
-"""
-function ncol(ts::TSFrame)
-    DataFrames.size(ts.coredata)[2] - 1
-end
-# alias
-nc = TSFrames.ncol
-
-# Size of
-"""
-# Size methods
-```julia
-size(ts::TSFrame)
-```
-
-Return the number of rows and columns of `ts` as a tuple.
-
-# Examples
-```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
-julia> TSFrames.size(TSFrame([collect(1:100) collect(1:100) collect(1:100)]))
-(100, 3)
-```
-"""
-function size(ts::TSFrame)
-    nr = TSFrames.nrow(ts)
-    nc = TSFrames.ncol(ts)
-    (nr, nc)
-end
+# ============================================================
+# Section: Data Access
+# ============================================================
 
 # Return index column
 """
@@ -334,6 +348,9 @@ function tail(ts::TSFrame, n::Int = 10)
     TSFrame(DataFrames.last(ts.coredata, n))
 end
 
+# ============================================================
+# Section: Mutation
+# ============================================================
 
 """
 # Column Rename
@@ -529,6 +546,10 @@ function rename!(f::Function, ts::TSFrame)
     return ts
 end
 
+# ============================================================
+# Section: Validation
+# ============================================================
+
 """
 Internal function to check consistency of the Index of a TSFrame
 object.
@@ -586,8 +607,8 @@ false
 
 julia> ts = TSFrame(random(10), dates)
 10×1 TSFrame with Date Index
- Index       x1        
- Date        Float64   
+ Index       x1
+ Date        Float64
 ───────────────────────
  2017-01-01  0.768448
  2017-01-02  0.940515
@@ -657,12 +678,16 @@ function gettimeperiod(startdate, enddate, unit)
 end
 
 function isregular(ts::TSFrame, unit::Symbol = :firstdiff)
-    return isregular(ts.Index, unit)
+    return isregular(index(ts), unit)
 end
 
 function isregular(ts::TSFrame, unit::T) where {T<:Dates.Period}
-    return isregular(ts.Index, unit)
+    return isregular(index(ts), unit)
 end
+
+# ============================================================
+# Section: Iteration
+# ============================================================
 
 """
 # Iterators
@@ -674,7 +699,9 @@ Returns a row-based iterator for `tsf`.
 """
 Base.iterate(tsf::TSFrame, state=1) = state > length(tsf) ? nothing : (tsf[state], state+1)
 
-Base.ndims(::Type{TSFrame}) = 2
+# ============================================================
+# Section: Equality
+# ============================================================
 
 """
 # Equality
@@ -687,3 +714,12 @@ Base.isequal(tsf1::TSFrame, tsf2::TSFrame)::Bool
 Base.:(==)(tsf1::TSFrame, tsf2::TSFrame)::Bool = tsf1.coredata == tsf2.coredata
 Base.isequal(tsf1::TSFrame, tsf2::TSFrame)::Bool = isequal(tsf1.coredata, tsf2.coredata)
 
+# ============================================================
+# Section: Internal Helpers
+# ============================================================
+
+"""Internal: wrap a transformed DataFrame back into a TSFrame with the same index."""
+function _wrap_with_index(result::DataFrame, original_index::AbstractVector)
+    insertcols!(result, 1, :Index => original_index)
+    TSFrame(result, :Index; issorted=true, copycols=false)
+end

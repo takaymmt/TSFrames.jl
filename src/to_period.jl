@@ -26,46 +26,20 @@ function to_period(tsf::TSFrame, period::T)::TSFrame where {T<:Period}
     tsf[endpoints(tsf, period)]
 end
 
-function to_yearly(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Year(n))]
-end
-
-function to_quarterly(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Quarter(n))]
-end
-
-function to_monthly(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Month(n))]
-end
-
-function to_weekly(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Week(n))]
-end
-
-function to_daily(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Day(n))]
-end
-
-function to_hourly(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Hour(n))]
-end
-
-function to_minutes(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Minute(n))]
-end
-
-function to_seconds(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Second(n))]
-end
-
-function to_milliseconds(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Millisecond(n))]
-end
-
-function to_microseconds(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Microsecond(n))]
-end
-
-function to_nanoseconds(tsf::TSFrame, n=1)::TSFrame
-    tsf[endpoints(tsf, Nanosecond(n))]
+for (fname, PType) in [
+    (:to_yearly,       :Year),
+    (:to_quarterly,    :Quarter),
+    (:to_monthly,      :Month),
+    (:to_weekly,       :Week),
+    (:to_daily,        :Day),
+    (:to_hourly,       :Hour),
+    (:to_minutes,      :Minute),
+    (:to_seconds,      :Second),
+    (:to_milliseconds, :Millisecond),
+    (:to_microseconds, :Microsecond),
+    (:to_nanoseconds,  :Nanosecond)
+]
+    @eval function $fname(tsf::TSFrame, n=1)::TSFrame
+        tsf[endpoints(tsf, $PType(n))]
+    end
 end

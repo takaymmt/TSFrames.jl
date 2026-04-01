@@ -283,8 +283,7 @@ function endpoints(values::AbstractVector, on::Function, k::Int=1)
         throw(DomainError("`k` needs to be greater than 0"))
     end
 
-    ex = Expr(:call, on, values)
-    keys = eval(ex)
+    keys = on(values)
     keys_unique = unique(keys) # for some `on` the keys become unsorted
     if (!issorted(keys_unique))
         keys_unique = sort(keys_unique)
@@ -355,32 +354,26 @@ function endpoints(ts::TSFrame, on::T) where {T<:Dates.Period}
     endpoints(index(ts), on)
 end
 
+const PERIOD_MAP = Dict{Symbol, DataType}(
+    :years => Year,
+    :quarters => Quarter,
+    :months => Month,
+    :weeks => Week,
+    :days => Day,
+    :hours => Hour,
+    :minutes => Minute,
+    :seconds => Second,
+    :milliseconds => Millisecond,
+    :microseconds => Microsecond,
+    :nanoseconds => Nanosecond
+)
+
 function endpoints(ts::TSFrame, on::Symbol, k::Int=1)
-    if (on == :days)
-        endpoints(ts, Day(k))
-    elseif (on == :weeks)
-        endpoints(ts, Week(k))
-    elseif (on == :months)
-        endpoints(ts, Month(k))
-    elseif (on == :quarters)
-        endpoints(ts, Quarter(k))
-    elseif (on == :years)
-        endpoints(ts, Year(k))
-    elseif (on == :hours)
-        endpoints(ts, Hour(k))
-    elseif (on == :minutes)
-        endpoints(ts, Minute(k))
-    elseif (on == :seconds)
-        endpoints(ts, Second(k))
-    elseif (on == :milliseconds)
-        endpoints(ts, Millisecond(k))
-    elseif (on == :microseconds)
-        endpoints(ts, Microsecond(k))
-    elseif (on == :nanoseconds)
-        endpoints(ts, Nanosecond(k))
-    else
+    PeriodType = get(PERIOD_MAP, on, nothing)
+    if PeriodType === nothing
         throw(ArgumentError("unsupported value supplied to `on`"))
     end
+    endpoints(ts, PeriodType(k))
 end
 
 function endpoints(ts::TSFrame, on::String, k::Int=1)

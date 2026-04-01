@@ -82,7 +82,7 @@ function pctchange(ts::TSFrame, periods::Int = 1)
     if periods <= 0
         throw(ArgumentError("periods must be a positive int"))
     end
-    ddf = (ts.coredata[:, Not(:Index)] .- TSFrames.lag(ts, periods).coredata[:, Not(:Index)]) ./ abs.(TSFrames.lag(ts, periods).coredata[:, Not(:Index)])
-    insertcols!(ddf, 1, "Index" => ts.coredata[:, :Index])
-    TSFrame(ddf, :Index)
+    lagged_data = TSFrames.lag(ts, periods).coredata[:, Not(:Index)]
+    ddf = (ts.coredata[:, Not(:Index)] .- lagged_data) ./ abs.(lagged_data)
+    _wrap_with_index(ddf, index(ts))
 end

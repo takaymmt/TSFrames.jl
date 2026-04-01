@@ -70,15 +70,20 @@ function rollapply(ts::TSFrame, fun::Function, windowsize::Int; bycolumn=true)
         windowsize = TSFrames.nrow(ts)
     end
 
-    firstWindow = ts[1:windowsize]
-    res = bycolumn ? mapcols(col -> fun(col), firstWindow.coredata[!, Not(:Index)]) : [fun(firstWindow)]
+    n_results = TSFrames.nrow(ts) - windowsize + 1
 
-    for endindex in windowsize + 1:TSFrames.nrow(ts)
-        currentWindow = ts[endindex - windowsize + 1:endindex]
-        if bycolumn
-            res = vcat(res, mapcols(col -> fun(col), currentWindow.coredata[!, Not(:Index)]), cols=:orderequal)
-        else
-            res = vcat(res, [fun(currentWindow)])
+    if bycolumn
+        result_dfs = Vector{DataFrame}(undef, n_results)
+        for (ri, endindex) in enumerate(windowsize:TSFrames.nrow(ts))
+            currentWindow = ts[endindex - windowsize + 1:endindex]
+            result_dfs[ri] = mapcols(col -> fun(col), currentWindow.coredata[!, Not(:Index)])
+        end
+        res = reduce((a, b) -> vcat(a, b, cols=:orderequal), result_dfs)
+    else
+        res = Vector{Any}(undef, n_results)
+        for (ri, endindex) in enumerate(windowsize:TSFrames.nrow(ts))
+            currentWindow = ts[endindex - windowsize + 1:endindex]
+            res[ri] = fun(currentWindow)
         end
     end
 

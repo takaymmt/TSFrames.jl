@@ -2,9 +2,7 @@ module TSFrames
 
 using DataFrames, Dates, ShiftedArrays, RecipesBase, RollingFunctions, Tables
 
-import Base.convert
 import Base.diff
-import Base.filter
 import Base.first
 import Base.getindex
 import Base.join
@@ -12,7 +10,6 @@ import Base.lastindex
 import Base.length
 import Base.Matrix
 import Base.names
-import Base.print
 import Base.==
 import Base.show
 import Base.summary
@@ -46,9 +43,6 @@ export TSFrame,
     lead,
     length,
     names,
-    first,
-    head,
-    tail,
     nr,
     nrow,
     nc,

@@ -261,12 +261,12 @@ function Base.getindex(ts::TSFrame, i::Int, j::Union{Symbol, String})
 end
 
 function Base.getindex(ts::TSFrame, dt::T, j::Int) where {T<:TimeType}
-    idx = findfirst(x -> x == dt, index(ts))
+    idx = searchsortedfirst(index(ts), dt)
     ts.coredata[idx, j+1]
 end
 
 function Base.getindex(ts::TSFrame, dt::T, j::Union{String, Symbol}) where {T<:TimeType}
-    idx = findfirst(x -> x == dt, index(ts))
+    idx = searchsortedfirst(index(ts), dt)
     ts.coredata[idx, j]
 end
 ###
@@ -281,12 +281,12 @@ function Base.getindex(ts::TSFrame, i::Int, j::AbstractVector{T}) where {T<:Unio
 end
 
 function Base.getindex(ts::TSFrame, dt::T, j::AbstractVector{Int}) where {T<:TimeType}
-    idx = findfirst(x -> x == dt, index(ts))
+    idx = searchsortedfirst(index(ts), dt)
     ts[idx, j]
 end
 
 function Base.getindex(ts::TSFrame, dt::D, j::AbstractVector{T}) where {D<:TimeType, T<:Union{String, Symbol}}
-    idx = findfirst(x -> x == dt, index(ts))
+    idx = searchsortedfirst(index(ts), dt)
     ts[idx, j]
 end
 ###
@@ -307,7 +307,7 @@ function Base.getindex(ts::TSFrame, i::AbstractVector{Int}, j::Union{String, Sym
 end
 
 function Base.getindex(ts::TSFrame, dt::AbstractVector{T}, j::Int) where {T<:TimeType}
-    idx = map(d -> findfirst(x -> x == d, index(ts)), dt)
+    idx = map(d -> searchsortedfirst(index(ts), d), dt)
     if length(idx) == 0
         return nothing
     end
@@ -315,7 +315,7 @@ function Base.getindex(ts::TSFrame, dt::AbstractVector{T}, j::Int) where {T<:Tim
 end
 
 function Base.getindex(ts::TSFrame, dt::AbstractVector{T}, j::Union{String, Symbol}) where {T<:TimeType}
-    idx = map(d -> findfirst(x -> x == d, index(ts)), dt)
+    idx = map(d -> searchsortedfirst(index(ts), d), dt)
     if length(idx) == 0
         return nothing
     end
@@ -333,7 +333,7 @@ function Base.getindex(ts::TSFrame, i::AbstractVector{Int}, j::AbstractVector{T}
 end
 
 function Base.getindex(ts::TSFrame, dt::AbstractVector{T}, j::AbstractVector{Int}) where {T<:TimeType}
-    idx = map(d -> findfirst(x -> x == d, index(ts)), dt)
+    idx = map(d -> searchsortedfirst(index(ts), d), dt)
     if length(idx) == 0
         return nothing
     end
@@ -341,7 +341,7 @@ function Base.getindex(ts::TSFrame, dt::AbstractVector{T}, j::AbstractVector{Int
 end
 
 function Base.getindex(ts::TSFrame, dt::AbstractVector{D}, j::AbstractVector{T}) where {D<:TimeType, T<:Union{String, Symbol}}
-    idx = map(d -> findfirst(x -> x == d, index(ts)), dt)
+    idx = map(d -> searchsortedfirst(index(ts), d), dt)
     ts[idx, j]
 end
 ###
@@ -408,59 +408,62 @@ function Base.getindex(ts::TSFrame, d::T) where {T<:TimeType}
 end
 
 # By period
-function Base.getindex(ts::TSFrame, y::Year)
-    sdf = filter(:Index => x -> Dates.Year(x) == y, ts.coredata)
+#
+# Helper: filter rows where the tuple of period extractors applied to
+# the Index matches the given values.  Each extractor is the *type
+# constructor* used as a function (e.g. `Year`, `Month`).  Because the
+# extractor tuple and value tuple are fixed at each call-site the
+# compiler can constant-fold the tuple length, keeping the generated
+# code type-stable.
+function _filter_by_period(ts::TSFrame, extractors::Tuple, values::Tuple)
+    sdf = filter(:Index => x -> Tuple(f(x) for f in extractors) == values,
+                 ts.coredata)
     TSFrame(sdf)
 end
 
+function Base.getindex(ts::TSFrame, y::Year)
+    _filter_by_period(ts, (Dates.Year,), (y,))
+end
+
 function Base.getindex(ts::TSFrame, y::Year, q::Quarter)
-    sdf = filter(:Index => x -> (Year(x), Quarter(x)) == (y, q), ts.coredata)
-    TSFrame(sdf)
+    _filter_by_period(ts, (Year, Quarter), (y, q))
 end
 
 # XXX: ideally, Dates.YearMonth class should exist
 function Base.getindex(ts::TSFrame, y::Year, m::Month)
-    sdf = filter(:Index => x -> (Year(x), Month(x)) == (y, m), ts.coredata)
-    TSFrame(sdf)
+    _filter_by_period(ts, (Year, Month), (y, m))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, w::Week)
-    sdf = filter(:Index => x -> (Year(x), Month(x), Week(x)) == (y, m, w), ts.coredata)
-    TSFrame(sdf)
+    _filter_by_period(ts, (Year, Month, Week), (y, m, w))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, d::Day)
-    sdf = filter(:Index => x -> (Year(x), Month(x), Day(x)) == (y, m, d), ts.coredata)
-    TSFrame(sdf)
+    _filter_by_period(ts, (Year, Month, Day), (y, m, d))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, d::Day, h::Hour)
-    sdf = filter(:Index => x -> (Year(x), Month(x), Day(x), Hour(x)) == (y, m, d, h), ts.coredata)
-    TSFrame(sdf)
+    _filter_by_period(ts, (Year, Month, Day, Hour), (y, m, d, h))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, d::Day, h::Hour, min::Minute)
-    sdf = filter(:Index => x -> (Year(x), Month(x), Day(x), Hour(x), Minute(x)) == (y, m, d, h, min), ts.coredata)
-    TSFrame(sdf)
+    _filter_by_period(ts, (Year, Month, Day, Hour, Minute), (y, m, d, h, min))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, d::Day, h::Hour, min::Minute, sec::Second)
-    sdf = filter(:Index => x -> (Year(x), Month(x), Day(x), Hour(x), Minute(x), Second(x)) == (y, m, d, h, min, sec), ts.coredata)
-    TSFrame(sdf)
+    _filter_by_period(ts, (Year, Month, Day, Hour, Minute, Second), (y, m, d, h, min, sec))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, d::Day, h::Hour, min::Minute, sec::Second, ms::Millisecond)
-    sdf = filter(:Index =>
-        x -> (Year(x), Month(x), Day(x), Hour(x), Minute(x), Second(x), Millisecond(x)) ==
-        (y, m, d, h, min, sec, ms), ts.coredata)
-    TSFrame(sdf)
+    _filter_by_period(ts, (Year, Month, Day, Hour, Minute, Second, Millisecond), (y, m, d, h, min, sec, ms))
 end
 
 # By string timestamp
 function Base.getindex(ts::TSFrame, i::String)
     d::Date = Date(Dates.parse_components(i, Dates.dateformat"yyyy-mm-dd")...)
-    ind = findall(x -> x == d, index(ts)) # returns duplicate indices
-    ts[ind]
+    first_idx = searchsortedfirst(index(ts), d)
+    last_idx = searchsortedlast(index(ts), d)
+    ts[first_idx:last_idx]
 end
 
 # By {TimeType, Period} range
