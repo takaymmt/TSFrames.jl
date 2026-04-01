@@ -6,7 +6,6 @@ DocMeta.setdocmeta!(TSFrames, :DocTestSetup, :(using TSFrames, DataFrames, Dates
 makedocs(;
     modules=[TSFrames],
     authors="xKDR Forum",
-    repo="https://github.com/xKDR/TSFrames.jl/blob/{commit}{path}#{line}",
     sitename="TSFrames.jl",
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", "false") == "true",
@@ -19,8 +18,8 @@ makedocs(;
         "User guide" => "user_guide.md",
         "API reference" => "api.md",
     ],
-    doctest=false,               # TODO: switch to true in the version after v0.1.0
-    strict=false,                # TODO: switch to true in the version after v0.1.0
+    doctest=false,
+    warnonly=true,
 )
 
 deploydocs(;

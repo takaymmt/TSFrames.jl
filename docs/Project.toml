@@ -11,4 +11,4 @@ GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 TSFrames = "9f90e835-9451-4aaa-bcb1-743a1b8d2f84"
 
 [compat]
-Documenter = "0.27.15"
+Documenter = "1"

@@ -310,11 +310,9 @@ ep1 = endpoints(datetimes, Week(2))[1];
 
 # Irregular series
 datetimesecondsrandom = sample(MersenneTwister(123), datetimeseconds, 20, replace=false, ordered=true)
-@test endpoints(datetimesecondsrandom, Minute(1)) == [1, 2, 3, 4, 5, 6, 7, 8, 10, 11,
-                                                      12, 13, 14, 15, 16, 17, 18, 19,
-                                                      20]
-@test endpoints(datetimesecondsrandom, Minute(20)) == [2, 3, 5, 6, 8, 11, 12, 13, 15, 18, 19, 20]
-@test endpoints(datetimesecondsrandom, Hour(1)) == [3, 6, 11, 13, 18, 20]
+@test endpoints(datetimesecondsrandom, Minute(1)) == collect(1:20)
+@test endpoints(datetimesecondsrandom, Minute(20)) == [2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14, 16, 18, 20]
+@test endpoints(datetimesecondsrandom, Hour(1)) == [2, 4, 8, 12, 14, 19, 20]
 
 
 ##

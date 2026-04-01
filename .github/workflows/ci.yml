@@ -12,30 +12,30 @@ jobs:
         runs-on: ${{ matrix.os }}
         strategy:
             matrix:
-                version: ['1']
+                version: ['1.12', '1']
                 os: [ubuntu-latest, windows-latest, macos-latest]
                 arch: [x64]
         steps:
-            - uses: actions/checkout@v2
-            - uses: julia-actions/setup-julia@latest
+            - uses: actions/checkout@v4
+            - uses: julia-actions/setup-julia@v2
               with:
                 version: ${{ matrix.version }}
                 arch: ${{ matrix.arch }}
-            - uses: julia-actions/cache@v1
+            - uses: julia-actions/cache@v2
             - uses: julia-actions/julia-buildpkg@v1
             - uses: julia-actions/julia-runtest@v1
     codecov:
         name: Code Coverage
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v2
-            - uses: julia-actions/setup-julia@latest
+            - uses: actions/checkout@v4
+            - uses: julia-actions/setup-julia@v2
               with:
                   version: '1'
-            - uses: julia-actions/cache@v1
+            - uses: julia-actions/cache@v2
             - uses: julia-actions/julia-buildpkg@v1
             - uses: julia-actions/julia-runtest@v1
             - uses: julia-actions/julia-processcoverage@v1
-            - uses: codecov/codecov-action@v1
+            - uses: codecov/codecov-action@v5
               with:
                 file: lcov.info
