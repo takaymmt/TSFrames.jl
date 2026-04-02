@@ -69,6 +69,7 @@ export TSFrame,
     to_milliseconds,
     to_microseconds,
     to_nanoseconds,
+    upsample,
     vcat,
     DataFrame,
     Date
@@ -91,6 +92,7 @@ include("rollapply.jl")
 include("subset.jl")
 include("to_period.jl")
 include("resample.jl")
+include("upsample.jl")
 include("vcat.jl")
 include("broadcasting.jl")
 include("tables.jl")

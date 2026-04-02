@@ -57,48 +57,6 @@ const _OHLCV_DEFAULT_AGG = (
     :Volume => sum,
 )
 
-# Type-barrier: builds the index output vector.
-# V<:AbstractVector forces Julia to specialise on the concrete index type (e.g.
-# Vector{Date}), so eltype(V) is statically known, @view is stack-allocated,
-# and index_at() returns a concrete element — no per-element boxing.
-@inline function _build_index_out(
-    idx::V,
-    ep::Vector{Int},
-    index_at::IA,
-    n::Int,
-) where {V<:AbstractVector, IA<:Function}
-    out = Vector{eltype(V)}(undef, n)
-    j   = 1
-    @inbounds for g in 1:n
-        out[g] = index_at(@view idx[j:ep[g]])
-        j = ep[g] + 1
-    end
-    out
-end
-
-# Type-barrier: allocates the output vector and fills all n groups.
-# V<:AbstractVector + F<:Function force Julia to JIT-compile a separate method
-# for each (column type, aggregation function) pair, making every fn() call in
-# the hot loop type-stable — no boxing, no dynamic dispatch per group.
-# Called once per column from _resample_core.
-@inline function _alloc_and_fill_col(
-    src::V,
-    ep::Vector{Int},
-    fn::F,
-    n::Int,
-) where {V<:AbstractVector, F<:Function}
-    first_val = fn(@view src[1:ep[1]])
-    out_T     = typeof(first_val)
-    dst       = Vector{out_T}(undef, n)
-    dst[1]    = first_val
-    j = ep[1] + 1
-    @inbounds for g in 2:n
-        dst[g] = fn(@view src[j:ep[g]])
-        j = ep[g] + 1
-    end
-    dst
-end
-
 # Internal: single-pass @view iteration — no copy, no groupby, no combine.
 # Uses column-major access (outer=columns, inner=groups) for cache efficiency.
 #

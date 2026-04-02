@@ -1,0 +1,286 @@
+#!/usr/bin/env julia
+# benchmark/run.jl — Benchmark orchestrator
+#
+# Usage:
+#   julia benchmark/run.jl [options]
+#
+# Options:
+#   --save <path>              Save results to JSON file
+#   --group <g1,g2,...>        Run specific benchmark groups only
+#   --compare <f1> <f2> ...   Compare multiple JSON result files
+#   --report <f1> <f2> ...    Generate Markdown report from JSON files
+#   --tune                     Tune benchmark parameters before running
+#   --verbose                  Show detailed progress
+#
+# Examples:
+#   # Run all and save
+#   julia benchmark/run.jl --save benchmark/results/baseline.json
+#
+#   # Run specific groups
+#   julia benchmark/run.jl --group resample_vs_to_period,apply --save benchmark/results/latest.json
+#
+#   # Compare 3 results
+#   julia benchmark/run.jl --compare baseline.json after_p1.json after_p2.json
+#
+#   # Generate report from multiple results
+#   julia benchmark/run.jl --report baseline.json after_p1.json after_p2.json
+
+using Dates
+using BenchmarkTools
+using Statistics
+
+include(joinpath(@__DIR__, "utils.jl"))
+
+# ── Argument Parsing ─────────────────────────────────────────────────────────
+
+function parse_args(args)
+    config = Dict{Symbol, Any}(
+        :save     => nothing,
+        :groups   => nothing,
+        :compare  => nothing,
+        :report   => nothing,
+        :tune     => false,
+        :verbose  => false,
+    )
+
+    i = 1
+    while i <= length(args)
+        arg = args[i]
+        if arg == "--save"
+            i += 1
+            config[:save] = args[i]
+        elseif arg == "--group"
+            i += 1
+            config[:groups] = split(args[i], ",")
+        elseif arg == "--compare"
+            files = String[]
+            i += 1
+            while i <= length(args) && !startswith(args[i], "--")
+                push!(files, args[i])
+                i += 1
+            end
+            config[:compare] = files
+            continue  # skip i += 1 at end
+        elseif arg == "--report"
+            files = String[]
+            i += 1
+            while i <= length(args) && !startswith(args[i], "--")
+                push!(files, args[i])
+                i += 1
+            end
+            config[:report] = files
+            continue
+        elseif arg == "--tune"
+            config[:tune] = true
+        elseif arg == "--verbose"
+            config[:verbose] = true
+        else
+            @warn "Unknown argument: $arg"
+        end
+        i += 1
+    end
+
+    return config
+end
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+const _verbose = Ref(false)
+
+function log_msg(msg::String; verbose::Bool=false, level::Symbol=:info)
+    # When verbose=true is passed, only print if _verbose[] is set
+    if verbose && !_verbose[]
+        return
+    end
+    timestamp = Dates.format(now(), "HH:MM:SS")
+    prefix = level == :info ? "INFO" : (level == :warn ? "WARN" : "ERR ")
+    println("[$timestamp] $prefix  $msg")
+end
+
+
+# ── Run Benchmarks ───────────────────────────────────────────────────────────
+
+function run_benchmarks(config)
+    log_msg("Loading benchmark suite...")
+
+    # Load the suite
+    include(joinpath(@__DIR__, "benchmarks.jl"))
+
+    suite = SUITE
+
+    # Filter groups if requested
+    if config[:groups] !== nothing
+        filtered = BenchmarkTools.BenchmarkGroup()
+        for g in config[:groups]
+            g = strip(g)
+            if haskey(suite, g)
+                filtered[g] = suite[g]
+            else
+                log_msg("Group '$g' not found in suite. Available: $(join(keys(suite), ", "))", level=:warn)
+            end
+        end
+        suite = filtered
+    end
+
+    # Report what we're running
+    all_leaves = collect_leaves(suite)
+    log_msg("Running $(length(all_leaves)) benchmarks across $(length(keys(suite))) groups")
+
+    if config[:verbose]
+        for k in sort(collect(keys(suite)))
+            leaves = collect_leaves(suite[k], string(k))
+            log_msg("  $k: $(length(leaves)) benchmarks", verbose=true)
+        end
+    end
+
+    # Tune if requested
+    if config[:tune]
+        log_msg("Tuning benchmark parameters...")
+        tune!(suite)
+        log_msg("Tuning complete.")
+    end
+
+    # Run
+    log_msg("Running benchmarks (this may take several minutes)...")
+    results = run(suite; verbose=config[:verbose])
+    log_msg("Benchmarks complete.")
+
+    # Print summary
+    println("\n", "="^60)
+    println("  Benchmark Results Summary")
+    println("="^60)
+    for group_key in sort(collect(keys(results)))
+        println("\n--- $group_key ---")
+        print_group_summary(results[group_key], "  ")
+    end
+
+    # Save if requested
+    if config[:save] !== nothing
+        save_results(results, config[:save])
+        log_msg("Results saved to: $(config[:save])")
+    end
+
+    return results
+end
+
+function print_group_summary(bg, indent="")
+    for k in sort(collect(keys(bg)))
+        child = bg[k]
+        if child isa BenchmarkTools.BenchmarkGroup
+            println("$(indent)$k:")
+            print_group_summary(child, indent * "  ")
+        else
+            t = child
+            med = BenchmarkTools.median(t)
+            min_t = BenchmarkTools.minimum(t)
+            println("$(indent)$k: $(format_time(min_t.time)) (median: $(format_time(med.time)), $(min_t.allocs) allocs, $(format_bytes(min_t.memory)))")
+        end
+    end
+end
+
+
+# ── Save / Load ──────────────────────────────────────────────────────────────
+
+function save_results(results, path::String)
+    # Ensure directory exists
+    dir = dirname(path)
+    if !isempty(dir) && !isdir(dir)
+        mkpath(dir)
+    end
+
+    # Serialize using BenchmarkTools' built-in JSON serialization
+    BenchmarkTools.save(path, results)
+end
+
+
+# ── Compare Mode ─────────────────────────────────────────────────────────────
+
+function run_compare(files)
+    if length(files) < 2
+        error("Compare requires at least 2 files. Got: $(length(files))")
+    end
+
+    log_msg("Loading $(length(files)) result files for comparison...")
+
+    results = []
+    labels = String[]
+    for f in files
+        push!(results, load_result(f))
+        push!(labels, basename(f))
+    end
+
+    baseline = results[1]
+    baseline_label = labels[1]
+
+    println("\n", "="^70)
+    println("  Benchmark Comparison")
+    println("  Baseline: $baseline_label")
+    println("="^70)
+
+    for idx in 2:length(results)
+        judgment = judge(minimum(results[idx]), minimum(baseline))
+        println("\n--- $(labels[idx]) vs $baseline_label ---")
+        print_judgment_summary(judgment)
+    end
+end
+
+function print_judgment_summary(judgment)
+    improvements = 0
+    regressions = 0
+    invariant_count = 0
+
+    for_each_leaf(judgment) do path, trial
+        if isimprovement(trial)
+            improvements += 1
+            println("  $(rpad(path, 50)) IMPROVEMENT")
+        elseif isregression(trial)
+            regressions += 1
+            println("  $(rpad(path, 50)) REGRESSION")
+        else
+            invariant_count += 1
+        end
+    end
+
+    println("\n  Summary: $improvements improvements, $regressions regressions, $invariant_count invariant")
+end
+
+function for_each_leaf(f, bg, prefix="")
+    for k in sort(collect(keys(bg)))
+        full = isempty(prefix) ? string(k) : "$prefix/$k"
+        child = bg[k]
+        if child isa BenchmarkTools.BenchmarkGroup
+            for_each_leaf(f, child, full)
+        else
+            f(full, child)
+        end
+    end
+end
+
+# ── Report Mode ──────────────────────────────────────────────────────────────
+
+function run_report(files)
+    if isempty(files)
+        error("Report requires at least 1 file.")
+    end
+
+    # Delegate to analysis/report.jl
+    include(joinpath(@__DIR__, "analysis", "report.jl"))
+    Base.invokelatest(generate_report, files)
+end
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+function main()
+    config = parse_args(ARGS)
+    _verbose[] = config[:verbose]
+
+    if config[:compare] !== nothing
+        run_compare(config[:compare])
+    elseif config[:report] !== nothing
+        run_report(config[:report])
+    else
+        run_benchmarks(config)
+    end
+end
+
+main()

@@ -582,5 +582,40 @@ t = ts_intraday_2[:, "data"]
 @test ts_secondly[1, "data_sum"] ≈ sum(t[1:2])
 @test ts_secondly[DateTime(2000, 1, 1, 0, 0, 1)][1,1] ≈ sum(t[1:2])
 
-# Check temp colname
-@test !all(occursin.(["A", "B", "C"], TSFrames.get_tmp_colname(["A", "B", "C"])))
+# Multi-column TSFrame value correctness
+@testset "apply multi-column correctness" begin
+    using Statistics
+    dates = collect(Date(2020,1,1):Day(1):Date(2020,3,31))  # 91 days
+    rng = MersenneTwister(42)
+    df_mc = DataFrame(A=rand(rng, 91), B=rand(rng, 91))
+    ts_mc = TSFrame(df_mc, dates)
+
+    result = apply(ts_mc, Month(1), mean)
+    @test DataFrames.nrow(result.coredata) == 3   # Jan, Feb, Mar
+    @test result[1, "A_mean"] ≈ mean(df_mc.A[1:31])
+    @test result[1, "B_mean"] ≈ mean(df_mc.B[1:31])
+    @test result[2, "A_mean"] ≈ mean(df_mc.A[32:60])   # Feb: days 32-60
+    @test result[2, "B_mean"] ≈ mean(df_mc.B[32:60])
+end
+
+@testset "apply renamecols=false" begin
+    dates = collect(Date(2020,1,1):Day(1):Date(2020,1,31))
+    ts_rc = TSFrame(DataFrame(val=randn(MersenneTwister(1), 31)), dates)
+
+    result_true  = apply(ts_rc, Month(1), sum; renamecols=true)
+    result_false = apply(ts_rc, Month(1), sum; renamecols=false)
+
+    # renamecols=true: column named "val_sum"
+    @test "val_sum" in names(result_true.coredata)
+    # renamecols=false: column keeps original name "val"
+    @test "val" in names(result_false.coredata)
+    # Values should be equal
+    @test result_true[1, "val_sum"] ≈ result_false[1, "val"]
+end
+
+@testset "apply empty TSFrame" begin
+    empty_ts = TSFrame(DataFrame(Index=Date[], x=Float64[]))
+    result = apply(empty_ts, Month(1), sum)
+    @test DataFrames.nrow(result.coredata) == 0
+    @test "x_sum" in names(result.coredata)
+end

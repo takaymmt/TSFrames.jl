@@ -88,3 +88,15 @@ end
 @testset "resample()" begin
     include("resample.jl")
 end
+
+@testset "upsample()" begin
+    include("upsample.jl")
+end
+
+@testset "DateTime/Time index" begin
+    include("datetime_index.jl")
+end
+
+@testset "Irregular time series" begin
+    include("irregular_timeseries.jl")
+end

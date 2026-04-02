@@ -132,40 +132,31 @@ julia> show(ts_weekly[1:10])
 ```
 """
 
-# Internal helper: convert endpoints vector to per-row group-index vector.
-# ep: sorted endpoint indices from endpoints()
-# n:  total number of rows in the TSFrame
-function _build_groupindices(ep::Vector{Int}, n::Int)::Vector{Int}
-    gi = Vector{Int}(undef, n)
-    j = 1
-    for i in eachindex(ep)
-        gi[j:ep[i]] .= ep[i]
-        j = ep[i] + 1
-    end
-    gi
-end
-
 function apply(ts::TSFrame, period::T, fun::V, index_at::Function=first; renamecols::Bool=true) where {T<:Dates.Period, V<:Function}
-    ep = endpoints(ts, period)
-    groupindices = _build_groupindices(ep, DataFrames.nrow(ts.coredata))
+    idx = index(ts)
 
-    local tmp_col::String = get_tmp_colname(names(ts.coredata))
-    sdf = DataFrame(ts.coredata; copycols=false)
-    sdf[!, tmp_col] = groupindices
-    gd = groupby(sdf, tmp_col)
-    df = combine(gd,
-                 :Index => index_at => :Index,
-                 Not(["Index", tmp_col]) .=> fun,
-                 keepkeys=false,
-                 renamecols=renamecols)
-    TSFrame(df, :Index)
-end
-
-function get_tmp_colname(cols::AbstractVector{String})
-    idx = 0
-    init = "tmp0191"
-    while string(init, idx) in cols
-        idx += 1
+    # Guard: empty TSFrame
+    if isempty(idx)
+        df = DataFrame(:Index => eltype(idx)[])
+        for col in names(ts.coredata, Not(:Index))
+            col_out = renamecols ? Symbol(col, :_, nameof(fun)) : Symbol(col)
+            df[!, col_out] = eltype(ts.coredata[!, col])[]
+        end
+        return TSFrame(df, :Index; issorted=true, copycols=false)
     end
-    return string(init, idx)
+
+    ep = endpoints(ts, period)
+    n  = length(ep)
+
+    index_out = _build_index_out(idx, ep, index_at, n)
+    df = DataFrame(:Index => index_out)
+
+    for col in names(ts.coredata, Not(:Index))
+        src     = ts.coredata[!, col]
+        dst     = _alloc_and_fill_col(src, ep, fun, n)
+        col_out = renamecols ? Symbol(col, :_, nameof(fun)) : Symbol(col)
+        df[!, col_out] = dst
+    end
+
+    TSFrame(df, :Index; issorted=true, copycols=false)
 end
