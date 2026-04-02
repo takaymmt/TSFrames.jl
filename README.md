@@ -51,7 +51,11 @@ weekly_last = to_weekly(ts)   # all columns: last value of each week
 
 ## About This Fork
 
-This fork extends xKDR/TSFrames.jl with a focus on **performance** and **financial data workflows**:
+This fork started for a fairly practical reason: I wanted TSFrames.jl to work with newer dependency versions.
+
+Initially, I did not intend to make substantial implementation changes. I was also curious how effective coding agents such as Claude Code could be in real package maintenance, so this fork became partly an experiment in AI-assisted development.
+
+As the work progressed, it grew beyond a simple compatibility update. The changes below — including `resample()`, internal performance improvements to `apply()`, and expanded tests and benchmarks — emerged gradually rather than being part of the original plan:
 
 - Added **`resample()`** for OHLCV-aware per-column period aggregation
 - Rewrote **`apply()`** internals for significant speedup (API fully unchanged)
@@ -69,12 +73,12 @@ different aggregation rule. It complements the existing `to_period` / `apply()` 
 
 #### Comparison with `to_period` and `apply`
 
-| | `to_weekly` / `to_period` | `apply` | `resample` |
-|---|---|---|---|
-| Aggregation | All columns: `last` (fixed) | All columns: same user function | Per-column, user-specified |
-| Typical use | Quick frequency conversion | Uniform statistical aggregation | OHLCV bar construction |
-| Index label | **Last** date of period | First date (default) | First date (default, configurable) |
-| Column names | `col_last` (auto-renamed) | `col_fun` (renamed by default) | Original names (default) |
+|              | `to_weekly` / `to_period`   | `apply`                         | `resample`                         |
+| ------------ | --------------------------- | ------------------------------- | ---------------------------------- |
+| Aggregation  | All columns: `last` (fixed) | All columns: same user function | Per-column, user-specified         |
+| Typical use  | Quick frequency conversion  | Uniform statistical aggregation | OHLCV bar construction             |
+| Index label  | **Last** date of period     | First date (default)            | First date (default, configurable) |
+| Column names | `col_last` (auto-renamed)   | `col_fun` (renamed by default)  | Original names (default)           |
 
 `to_weekly(ts)` is essentially `apply(ts, Week(1), last)` — all columns get `last`.
 `resample` allows specifying a different function for each column.
@@ -145,12 +149,14 @@ reducing per-group allocations. Both `apply()` and `resample()` share the same h
 New `@testset` blocks and new test files were added to improve coverage of edge cases:
 
 **Existing test files:**
+
 - `test/apply.jl` — added: multi-column correctness, `renamecols=false`, empty TSFrame
 - `test/lag.jl` — added: multi-column, DateTime index, single-row, default argument,
   lag/lead symmetry, out-of-bounds (lag > nrow), negative lag equals lead
 - `test/lead.jl` — added: mirror set of 6 `@testset` blocks matching the lag tests
 
 **New test files:**
+
 - `test/datetime_index.jl` — 40 tests covering 10 operation areas with `DateTime`
   and `Time` indexes (construction, subset, apply, lag/lead, join, rolling, etc.)
 - `test/irregular_timeseries.jl` — 44 tests using weekday-only (business day) data
@@ -163,6 +169,7 @@ New `@testset` blocks and new test files were added to improve coverage of edge 
 The benchmark tooling was redesigned for modularity and repeatability:
 
 **Suite files** (`benchmark/suites/`) — 143 benchmarks across 3 data sizes (100 / 10,000 / 1,000,000 rows):
+
 - `bench_apply.jl` — `apply()` with various functions and periods
 - `bench_construction.jl` — TSFrame construction from DataFrame and vectors
 - `bench_endpoints.jl` — `endpoints()` at multiple frequencies
@@ -173,6 +180,7 @@ The benchmark tooling was redesigned for modularity and repeatability:
 - `bench_vcat.jl` — vertical concatenation
 
 **Supporting scripts:**
+
 - `benchmark/utils.jl` — shared utilities: `load_result`, `format_time`, `format_bytes`,
   `collect_leaves`, `navigate_leaf` (consolidated from previously duplicated code)
 - `benchmark/run.jl` — orchestrator: `--group`, `--save`, `--compare`, `--report`, `--tune`, `--verbose`
@@ -180,10 +188,11 @@ The benchmark tooling was redesigned for modularity and repeatability:
 - `benchmark/analysis/report.jl` — Markdown report generation from one or more result files
 
 **Bug fixes in benchmark tooling:**
+
 - `judge()` now receives `TrialEstimate` (via `minimum()`) instead of raw `Trial` objects
 - `Base.invokelatest` used when calling `generate_report` after `include()` to avoid world-age errors
 
 ---
 
-*Based on [xKDR/TSFrames.jl](https://github.com/xKDR/TSFrames.jl).  
-Full documentation: [xkdr.github.io/TSFrames.jl](https://xkdr.github.io/TSFrames.jl/dev/)*
+_Based on [xKDR/TSFrames.jl](https://github.com/xKDR/TSFrames.jl).  
+Full documentation: [xkdr.github.io/TSFrames.jl](https://xkdr.github.io/TSFrames.jl/dev/)_
