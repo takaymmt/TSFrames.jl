@@ -116,13 +116,13 @@ function _resample_core(
     index_at::IA,
     renamecols::Bool,
 ) where {T<:Dates.Period, P, IA<:Function}
-    ep       = endpoints(ts, period)
-    n        = length(ep)
     idx      = index(ts)
     coredata = ts.coredata
 
     # ── Empty TSFrame edge case ───────────────────────────────────────────
-    if n == 0
+    # Guard must come before endpoints() — endpoints() calls first(timestamps)
+    # which throws BoundsError on an empty vector.
+    if isempty(idx)
         df = DataFrame(:Index => eltype(idx)[])
         for (col, fn) in col_agg_pairs
             hasproperty(coredata, col) || continue
@@ -131,6 +131,9 @@ function _resample_core(
         end
         return TSFrame(df, :Index; issorted=true, copycols=false)
     end
+
+    ep = endpoints(ts, period)
+    n  = length(ep)
 
     # ── Build index output (type-barrier) ────────────────────────────────
     # _build_index_out specialises on typeof(idx) so the loop is type-stable.

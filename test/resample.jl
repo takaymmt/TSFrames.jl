@@ -180,3 +180,21 @@ end
     @test result isa TSFrame
     @test eltype(result.coredata[:, :Index]) <: Dates.Date
 end
+
+# -- 10. Empty TSFrame ---------------------------------------------------------
+
+@testset "resample empty TSFrame" begin
+    ts_empty = TSFrame(DataFrame(Open=Float64[], Close=Float64[]), Date[])
+
+    # Default OHLCV mode: no rows, correct columns
+    result = resample(ts_empty, Week(1))
+    @test result isa TSFrame
+    @test DataFrames.nrow(result.coredata) == 0
+    @test "Open" in names(result)
+    @test "Close" in names(result)
+
+    # Explicit pairs mode
+    result2 = resample(ts_empty, Month(1), :Open => first, :Close => last)
+    @test DataFrames.nrow(result2.coredata) == 0
+    @test sort(names(result2)) == sort(["Open", "Close"])
+end
