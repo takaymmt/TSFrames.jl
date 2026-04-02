@@ -150,7 +150,7 @@ function apply(ts::TSFrame, period::T, fun::V, index_at::Function=first; renamec
     groupindices = _build_groupindices(ep, DataFrames.nrow(ts.coredata))
 
     local tmp_col::String = get_tmp_colname(names(ts.coredata))
-    sdf = copy(ts.coredata)
+    sdf = DataFrame(ts.coredata; copycols=false)
     sdf[!, tmp_col] = groupindices
     gd = groupby(sdf, tmp_col)
     df = combine(gd,
