@@ -50,6 +50,7 @@ export TSFrame,
     pctchange,
     plot,
     rbind,
+    resample,
     rollapply,
     show,
     size,
@@ -89,6 +90,7 @@ include("plot.jl")
 include("rollapply.jl")
 include("subset.jl")
 include("to_period.jl")
+include("resample.jl")
 include("vcat.jl")
 include("broadcasting.jl")
 include("tables.jl")

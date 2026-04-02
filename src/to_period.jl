@@ -23,7 +23,8 @@ to_nanoseconds(tsf::TSFrame, n=1)::TSFrame
 ```
 """
 function to_period(tsf::TSFrame, period::T)::TSFrame where {T<:Period}
-    tsf[endpoints(tsf, period)]
+    ep = endpoints(tsf, period)
+    TSFrame(tsf.coredata[ep, :], :Index; issorted = true, copycols = false)
 end
 
 for (fname, PType) in [
@@ -40,6 +41,7 @@ for (fname, PType) in [
     (:to_nanoseconds,  :Nanosecond)
 ]
     @eval function $fname(tsf::TSFrame, n=1)::TSFrame
-        tsf[endpoints(tsf, $PType(n))]
+        ep = endpoints(tsf, $PType(n))
+        TSFrame(tsf.coredata[ep, :], :Index; issorted = true, copycols = false)
     end
 end

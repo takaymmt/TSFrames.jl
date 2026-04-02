@@ -131,15 +131,23 @@ julia> show(ts_weekly[1:10])
 
 ```
 """
-function apply(ts::TSFrame, period::T, fun::V, index_at::Function=first; renamecols::Bool=true) where {T<:Dates.Period, V<:Function}
-    ep = endpoints(ts, period)
 
+# Internal helper: convert endpoints vector to per-row group-index vector.
+# ep: sorted endpoint indices from endpoints()
+# n:  total number of rows in the TSFrame
+function _build_groupindices(ep::Vector{Int}, n::Int)::Vector{Int}
+    gi = Vector{Int}(undef, n)
     j = 1
-    groupindices = Int[]
     for i in eachindex(ep)
-        append!(groupindices, fill(ep[i], ep[i]-j+1))
+        gi[j:ep[i]] .= ep[i]
         j = ep[i] + 1
     end
+    gi
+end
+
+function apply(ts::TSFrame, period::T, fun::V, index_at::Function=first; renamecols::Bool=true) where {T<:Dates.Period, V<:Function}
+    ep = endpoints(ts, period)
+    groupindices = _build_groupindices(ep, DataFrames.nrow(ts.coredata))
 
     local tmp_col::String = get_tmp_colname(names(ts.coredata))
     sdf = copy(ts.coredata)

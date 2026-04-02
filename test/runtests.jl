@@ -84,3 +84,7 @@ end
 @testset "to_period()" begin
     include("to_period.jl")
 end
+
+@testset "resample()" begin
+    include("resample.jl")
+end
