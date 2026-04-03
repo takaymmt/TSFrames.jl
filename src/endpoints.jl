@@ -296,7 +296,12 @@ function endpoints(values::AbstractVector, on::Function, k::Int=1)
         (!isempty(points) && last(points) != last(keys_unique)))
         push!(points, last(keys_unique))
     end
-    [findlast([p] .== keys) for p in points]
+    # Build reverse lookup: key → last index in keys
+    last_idx = Dict{eltype(keys), Int}()
+    for (i, key) in enumerate(keys)
+        last_idx[key] = i  # last occurrence wins (same as findlast)
+    end
+    Int[last_idx[p] for p in points]
 end
 
 function endpoints(ts::TSFrame, on::Function, k::Int=1)
@@ -319,7 +324,8 @@ function endpoints(timestamps::AbstractVector{T}, on::V)::Vector{Int} where {T<:
     end
 
     ep = Int[]
-    sizehint!(ep, length(timestamps))
+    estimated = max(length(timestamps) ÷ max(on.value, 1) + 2, 4)
+    sizehint!(ep, estimated)
 
     # store the next value of the period (on), use it for comparison
     # with values in the series (timestamps)

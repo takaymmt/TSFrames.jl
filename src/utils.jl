@@ -756,8 +756,16 @@ end
     fn::F,
     n::Int,
 ) where {V<:AbstractVector, F<:Function}
+    n == 0 && return eltype(V)[]
     first_val = fn(@view src[1:ep[1]])
-    out_T     = typeof(first_val)
+    out_T = if eltype(V) >: Missing
+        # Source has Missing in its element type — output must accommodate Missing.
+        # If first_val is missing itself, use nonmissingtype(eltype(V)) as the base.
+        base_T = first_val === missing ? nonmissingtype(eltype(V)) : typeof(first_val)
+        Union{Missing, base_T}
+    else
+        typeof(first_val)
+    end
     dst       = Vector{out_T}(undef, n)
     dst[1]    = first_val
     j = ep[1] + 1

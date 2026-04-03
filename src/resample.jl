@@ -31,19 +31,19 @@ Columns that are not present are silently skipped. At least one must exist.
   if `true`, DataFrames auto-generates names like `Open_first`.
 
 ## Examples
-```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random)
-julia> dates = collect(Date(2020,1,1):Day(1):Date(2020,3,31));
-julia> df = DataFrame(Open=rand(91), High=rand(91).+1, Low=rand(91).-1, Close=rand(91), Volume=rand(1:1000,91));
-julia> ts = TSFrame(df, dates);
+```julia
+dates = collect(Date(2020,1,1):Day(1):Date(2020,3,31))
+df = DataFrame(Open=rand(91), High=rand(91).+1, Low=rand(91).-1, Close=rand(91), Volume=rand(1:1000,91))
+ts = TSFrame(df, dates)
 
-julia> weekly = resample(ts, Week(1))
-# Returns weekly OHLCV with Open=first, High=max, Low=min, Close=last, Volume=sum
+# Default: auto-detect OHLCV columns and apply standard aggregation
+weekly = resample(ts, Week(1))
 
-julia> resample(ts, Month(1), :Open => first, :Close => last)
-# Custom: only Open and Close, monthly
+# Custom per-column aggregation with Symbol keys
+resample(ts, Month(1), :Open => first, :Close => last)
 
-julia> resample(ts, Week(1), "Open" => first, "Volume" => sum)
 # String keys also work
+resample(ts, Week(1), "Open" => first, "Volume" => sum)
 ```
 """
 
@@ -119,6 +119,7 @@ end
 function resample(
     ts::TSFrame,
     period::T;
+    fill_gaps::Bool    = false,
     index_at::Function = first,
     renamecols::Bool   = false,
 ) where {T<:Dates.Period}
@@ -127,7 +128,8 @@ function resample(
             "No standard OHLCV columns (Open, High, Low, Close, Volume) found. " *
             "Use resample(ts, period, :col => fn, ...) to specify columns explicitly."
         ))
-    _resample_core(ts, period, _OHLCV_DEFAULT_AGG, index_at, renamecols)
+    result = _resample_core(ts, period, _OHLCV_DEFAULT_AGG, index_at, renamecols)
+    fill_gaps ? _fill_period_gaps(result, ts, period, index_at) : result
 end
 
 # 2. Explicit Symbol => Function pairs
@@ -135,6 +137,7 @@ function resample(
     ts::TSFrame,
     period::T,
     col_agg_pairs::Pair{Symbol,<:Function}...;
+    fill_gaps::Bool    = false,
     index_at::Function = first,
     renamecols::Bool   = false,
 ) where {T<:Dates.Period}
@@ -142,7 +145,8 @@ function resample(
         hasproperty(ts.coredata, col) ||
             throw(ArgumentError("Column :$col not found in TSFrame"))
     end
-    _resample_core(ts, period, col_agg_pairs, index_at, renamecols)
+    result = _resample_core(ts, period, col_agg_pairs, index_at, renamecols)
+    fill_gaps ? _fill_period_gaps(result, ts, period, index_at) : result
 end
 
 # 3. String => Function pairs (convenience overload)
@@ -150,9 +154,61 @@ function resample(
     ts::TSFrame,
     period::T,
     col_agg_pairs::Pair{String,<:Function}...;
+    fill_gaps::Bool    = false,
     index_at::Function = first,
     renamecols::Bool   = false,
 ) where {T<:Dates.Period}
     sym_pairs = Tuple(Symbol(col) => fn for (col, fn) in col_agg_pairs)
-    resample(ts, period, sym_pairs...; index_at=index_at, renamecols=renamecols)
+    resample(ts, period, sym_pairs...; fill_gaps=fill_gaps, index_at=index_at, renamecols=renamecols)
+end
+
+# Internal: insert missing rows for periods that have no data.
+# Gap period labels use calendar-aligned period starts (consistent with SQL time-series DBs).
+function _fill_period_gaps(
+    result::TSFrame,
+    ts::TSFrame,
+    period::T,
+    index_at::IA,
+) where {T<:Dates.Period, IA<:Function}
+    idx = index(ts)
+    isempty(idx) && return result
+
+    # First calendar-aligned period boundary (same floor/trunc logic as endpoints()).
+    first_boundary = period isa Week ? floor(first(idx), typeof(period)) : trunc(first(idx), typeof(period))
+
+    # Two-pointer sweep over calendar boundaries: detect periods with no source data.
+    gap_labels = eltype(idx)[]
+    j = 1
+    for lo in first_boundary:period:last(idx)
+        hi = lo + period
+        # Advance j past timestamps belonging to earlier periods.
+        while j <= length(idx) && idx[j] < lo
+            j += 1
+        end
+        if j > length(idx) || idx[j] >= hi
+            # Gap label for index_at=last: last moment of the period.
+            # Date index: subtract 1 day; DateTime index: subtract 1 millisecond.
+            # Other index types (e.g. sub-millisecond) are not supported by endpoints().
+            label = index_at === last ? (eltype(idx) == Date ? hi - Day(1) : hi - Millisecond(1)) : lo
+            push!(gap_labels, label)
+        end
+    end
+
+    isempty(gap_labels) && return result
+
+    # Build gap rows and widen result columns to Union{Missing,T} in one pass.
+    # Result columns are fresh allocations from _resample_core, safe to mutate in-place.
+    gap_df = DataFrame(:Index => gap_labels)
+    for col in names(result.coredata, Not(:Index))
+        col_T = eltype(result.coredata[!, col])
+        promoted_T = col_T >: Missing ? col_T : Union{Missing, col_T}
+        if !(col_T >: Missing)
+            result.coredata[!, col] = convert(Vector{promoted_T}, result.coredata[!, col])
+        end
+        gap_df[!, col] = Vector{promoted_T}(missing, length(gap_labels))
+    end
+
+    combined = vcat(result.coredata, gap_df)
+    sort!(combined, :Index)
+    TSFrame(combined, :Index; issorted=true, copycols=false)
 end

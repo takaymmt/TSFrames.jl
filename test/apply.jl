@@ -619,3 +619,34 @@ end
     @test DataFrames.nrow(result.coredata) == 0
     @test "x_sum" in names(result.coredata)
 end
+
+@testset "Missing values" begin
+    dates = collect(Date(2020,1,1):Day(1):Date(2020,1,14))
+    # Week grouping (floor to Monday):
+    #   Group 1: Jan 1-5   (Wed-Sun, 5 days)  — indices 1-5
+    #   Group 2: Jan 6-12  (Mon-Sun, 7 days)  — indices 6-12
+    #   Group 3: Jan 13-14 (Mon-Tue, 2 days)  — indices 13-14
+
+    # missing in first group
+    col1 = Union{Float64,Missing}[missing, missing, 1.0, 2.0, 3.0, 4.0, 5.0,
+                                   6.0,    7.0,    8.0, 9.0, 10.0, 11.0, 12.0]
+    ts1 = TSFrame(DataFrame(x1=col1), dates)
+    r1 = apply(ts1, Week(1), sum; renamecols=false)
+    @test ismissing(r1[:, :x1][1])
+    @test r1[:, :x1][2] ≈ 4.0+5.0+6.0+7.0+8.0+9.0+10.0    # group 2: indices 6-12
+    @test r1[:, :x1][3] ≈ 11.0+12.0                          # group 3: indices 13-14
+
+    # missing in second group
+    col2 = Union{Float64,Missing}[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, missing,
+                                   8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0]
+    ts2 = TSFrame(DataFrame(x1=col2), dates)
+    r2 = apply(ts2, Week(1), sum; renamecols=false)
+    @test r2[:, :x1][1] ≈ 1.0+2.0+3.0+4.0+5.0
+    @test ismissing(r2[:, :x1][2])
+    @test r2[:, :x1][3] ≈ 13.0+14.0
+
+    # skipmissing wrapper
+    r3 = apply(ts1, Week(1), x -> sum(skipmissing(x)); renamecols=false)
+    @test !ismissing(r3[:, :x1][1])
+    @test r3[:, :x1][1] ≈ 1.0+2.0+3.0  # skips the 2 missings in group 1
+end
