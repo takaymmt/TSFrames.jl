@@ -11,7 +11,7 @@ using TSFrames
 
 const BENCH_JOIN = BenchmarkGroup()
 
-for (label, n) in [("small", 100), ("medium", 10_000), ("large", 1_000_000)]
+for (label, n) in [("small", 1_000), ("medium", 25_000), ("large", 1_000_000)]
     rng1 = MersenneTwister(42)
     rng2 = MersenneTwister(43)
 

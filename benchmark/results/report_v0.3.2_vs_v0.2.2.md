@@ -1,157 +1,237 @@
 # TSFrames.jl Benchmark Report
 
-Generated: 2026-04-03 12:08:41
+Generated: 2026-04-03 14:07:33
+
+## Dataset Sizes
+
+| Label | Rows | Notes |
+|-------|------|-------|
+| small | 1,000 | |
+| medium | 25,000 | |
+| large | 1,000,000 | rollapply uses 100,000 for large |
 
 ## apply
 
-| Benchmark | v0.2.2 | v0.3.1 | v0.3.2 |
-|---|---|---|---|
-| large/monthly_first | 7.53 ms | **937.88 us (8.0x faster)** | **936.88 us (8.0x faster)** |
-| large/monthly_last | 6.95 ms | **954.96 us (7.3x faster)** | **951.58 us (7.3x faster)** |
-| large/monthly_mean | 10.47 ms | **1.3 ms (8.0x faster)** | **1.3 ms (8.0x faster)** |
-| large/monthly_sum | 11.26 ms | **1.21 ms (9.3x faster)** | **1.18 ms (9.5x faster)** |
-| large/weekly_last | 5.41 ms | **625.0 us (8.7x faster)** | **627.67 us (8.6x faster)** |
-| large/weekly_mean | 10.3 ms | **1.28 ms (8.0x faster)** | **1.28 ms (8.0x faster)** |
-| large/yearly_first | 5.27 ms | **341.46 us (15.4x faster)** | **341.96 us (15.4x faster)** |
-| medium/monthly_first | 112.54 us | **10.92 us (10.3x faster)** | **10.83 us (10.4x faster)** |
-| medium/monthly_last | 105.92 us | **11.29 us (9.4x faster)** | **11.0 us (9.6x faster)** |
-| medium/monthly_mean | 181.0 us | **15.04 us (12.0x faster)** | **14.75 us (12.3x faster)** |
-| medium/monthly_sum | 188.88 us | **14.38 us (13.1x faster)** | **14.25 us (13.3x faster)** |
-| medium/weekly_last | 121.04 us | **7.96 us (15.2x faster)** | **8.0 us (15.1x faster)** |
-| medium/weekly_mean | 194.04 us | **14.29 us (13.6x faster)** | **14.38 us (13.5x faster)** |
-| medium/yearly_first | 104.75 us | **5.0 us (21.0x faster)** | **4.96 us (21.1x faster)** |
-| small/monthly_first | 59.38 us | **1.17 us (50.9x faster)** | **1.12 us (52.8x faster)** |
-| small/monthly_last | 59.29 us | **1.17 us (50.8x faster)** | **1.17 us (50.8x faster)** |
-| small/monthly_mean | 59.58 us | **1.25 us (47.7x faster)** | **1.21 us (49.3x faster)** |
-| small/monthly_sum | 60.25 us | **1.25 us (48.2x faster)** | **1.21 us (49.9x faster)** |
-| small/weekly_last | 59.96 us | **1.12 us (53.3x faster)** | **1.12 us (53.3x faster)** |
-| small/weekly_mean | 60.25 us | **1.25 us (48.2x faster)** | **1.21 us (49.9x faster)** |
-| small/yearly_first | 58.58 us | **1.08 us (54.1x faster)** | **1.12 us (52.1x faster)** |
+Period-based aggregation (last/first/mean/sum) over time series
+
+| Benchmark | v0.2.2 | v0.3.2 |
+|---|---|---|
+| **── small ──** |  |  |
+| monthly_first | 70.25 us | **2.08 us (33.7x faster)** |
+| monthly_last | 71.58 us | **2.21 us (32.4x faster)** |
+| monthly_mean | 73.92 us | **2.62 us (28.2x faster)** |
+| monthly_sum | 72.67 us | **2.5 us (29.1x faster)** |
+| weekly_last | 71.29 us | **1.83 us (38.9x faster)** |
+| weekly_mean | 73.62 us | **2.58 us (28.5x faster)** |
+| yearly_first | 70.92 us | **1.54 us (46.0x faster)** |
+| **── medium ──** |  |  |
+| monthly_first | 224.92 us | **25.5 us (8.8x faster)** |
+| monthly_last | 225.25 us | **25.79 us (8.7x faster)** |
+| monthly_mean | 333.29 us | **35.42 us (9.4x faster)** |
+| monthly_sum | 345.17 us | **32.5 us (10.6x faster)** |
+| weekly_last | 220.62 us | **18.33 us (12.0x faster)** |
+| weekly_mean | 373.92 us | **34.42 us (10.9x faster)** |
+| yearly_first | 193.96 us | **10.42 us (18.6x faster)** |
+| **── large ──** |  |  |
+| monthly_first | 8.1 ms | **972.29 us (8.3x faster)** |
+| monthly_last | 8.34 ms | **993.46 us (8.4x faster)** |
+| monthly_mean | 11.11 ms | **1.37 ms (8.1x faster)** |
+| monthly_sum | 11.82 ms | **1.23 ms (9.6x faster)** |
+| weekly_last | 5.96 ms | **656.88 us (9.1x faster)** |
+| weekly_mean | 11.47 ms | **1.34 ms (8.6x faster)** |
+| yearly_first | 5.62 ms | **350.79 us (16.0x faster)** |
 
 ## construction
 
-| Benchmark | v0.2.2 | v0.3.1 | v0.3.2 |
-|---|---|---|---|
-| large/from_dataframe_first_col | 2.15 ms | 2.21 ms (~1.0x) | 2.16 ms (~1.0x) |
-| large/from_dataframe_sorted_nocopy | 458.0 ns | 458.0 ns (~1.0x) | 458.0 ns (~1.0x) |
-| large/from_dataframe_with_index | 2.18 ms | 2.21 ms (~1.0x) | 2.15 ms (~1.0x) |
-| large/from_matrix_and_dates | 910.38 us | _1.93 ms (2.1x slower)_ | 889.12 us (~1.0x) |
-| large/from_vector_and_dates | 655.83 us | _1.43 ms (2.2x slower)_ | 639.04 us (~1.0x) |
-| medium/from_dataframe_first_col | 24.88 us | 25.0 us (~1.0x) | 24.96 us (~1.0x) |
-| medium/from_dataframe_sorted_nocopy | 458.0 ns | 458.0 ns (~1.0x) | 459.0 ns (~1.0x) |
-| medium/from_dataframe_with_index | 24.5 us | 24.42 us (~1.0x) | 24.58 us (~1.0x) |
-| medium/from_matrix_and_dates | 10.71 us | _21.58 us (2.0x slower)_ | 10.5 us (~1.0x) |
-| medium/from_vector_and_dates | 7.5 us | _16.12 us (2.2x slower)_ | 7.38 us (~1.0x) |
-| small/from_dataframe_first_col | 2.04 us | 2.0 us (~1.0x) | 2.0 us (~1.0x) |
-| small/from_dataframe_sorted_nocopy | 458.0 ns | _500.0 ns (1.1x slower)_ | 458.0 ns (~1.0x) |
-| small/from_dataframe_with_index | 1.83 us | 1.83 us (~1.0x) | 1.79 us (~1.0x) |
-| small/from_matrix_and_dates | 1.0 us | _1.25 us (1.2x slower)_ | 958.0 ns (~1.0x) |
-| small/from_vector_and_dates | 625.0 ns | _791.0 ns (1.3x slower)_ | 625.0 ns (~1.0x) |
+TSFrame construction from various input types
+
+| Benchmark | v0.2.2 | v0.3.2 |
+|---|---|---|
+| **── small ──** |  |  |
+| from_dataframe_first_col | 7.58 us | 7.92 us (~1.0x) |
+| from_dataframe_sorted_nocopy | 459.0 ns | _500.0 ns (1.1x slower)_ |
+| from_dataframe_with_index | 7.25 us | 7.25 us (~1.0x) |
+| from_matrix_and_dates | 2.29 us | 2.29 us (~1.0x) |
+| from_vector_and_dates | 1.29 us | _1.5 us (1.2x slower)_ |
+| **── medium ──** |  |  |
+| from_dataframe_first_col | 56.46 us | 58.21 us (~1.0x) |
+| from_dataframe_sorted_nocopy | 500.0 ns | 500.0 ns (~1.0x) |
+| from_dataframe_with_index | 55.92 us | 56.12 us (~1.0x) |
+| from_matrix_and_dates | 23.79 us | 23.5 us (~1.0x) |
+| from_vector_and_dates | 16.58 us | 16.33 us (~1.0x) |
+| **── large ──** |  |  |
+| from_dataframe_first_col | 2.32 ms | 2.36 ms (~1.0x) |
+| from_dataframe_sorted_nocopy | 500.0 ns | 500.0 ns (~1.0x) |
+| from_dataframe_with_index | 2.34 ms | 2.36 ms (~1.0x) |
+| from_matrix_and_dates | 963.04 us | 928.54 us (~1.0x) |
+| from_vector_and_dates | 692.5 us | 664.96 us (~1.0x) |
 
 ## endpoints
 
-| Benchmark | v0.2.2 | v0.3.1 | v0.3.2 |
-|---|---|---|---|
-| large/monthly | 861.75 us | 868.58 us (~1.0x) | 859.71 us (~1.0x) |
-| large/quarterly | 602.71 us | 605.96 us (~1.0x) | 602.25 us (~1.0x) |
-| large/symbol_months | 862.0 us | 866.46 us (~1.0x) | 859.88 us (~1.0x) |
-| large/symbol_weeks | 372.12 us | 373.79 us (~1.0x) | 373.33 us (~1.0x) |
-| large/weekly | 372.75 us | 373.96 us (~1.0x) | 372.88 us (~1.0x) |
-| large/yearly | 336.46 us | 335.83 us (~1.0x) | 334.92 us (~1.0x) |
-| medium/monthly | 8.83 us | 8.83 us (~1.0x) | 8.83 us (~1.0x) |
-| medium/quarterly | 6.29 us | 6.33 us (~1.0x) | 6.33 us (~1.0x) |
-| medium/symbol_months | 8.83 us | 9.17 us (~1.0x) | 8.92 us (~1.0x) |
-| medium/symbol_weeks | 4.08 us | 4.17 us (~1.0x) | 4.08 us (~1.0x) |
-| medium/weekly | 4.12 us | 4.0 us (~1.0x) | 4.0 us (~1.0x) |
-| medium/yearly | 4.04 us | **3.67 us (1.1x faster)** | 4.08 us (~1.0x) |
-| small/monthly | 125.0 ns | 125.0 ns (~1.0x) | **83.0 ns (1.5x faster)** |
-| small/quarterly | 84.0 ns | _125.0 ns (1.5x slower)_ | 83.0 ns (~1.0x) |
-| small/symbol_months | 125.0 ns | _208.0 ns (1.7x slower)_ | _167.0 ns (1.3x slower)_ |
-| small/symbol_weeks | 0.0 ns | _125.0 ns (125000.0x slower)_ | _125.0 ns (125000.0x slower)_ |
-| small/weekly | 41.0 ns | 41.0 ns (~1.0x) | 41.0 ns (~1.0x) |
-| small/yearly | 42.0 ns | 42.0 ns (~1.0x) | 42.0 ns (~1.0x) |
+Finding period endpoints (last date of each week/month/quarter/year)
+
+| Benchmark | v0.2.2 | v0.3.2 |
+|---|---|---|
+| **── small ──** |  |  |
+| monthly | 1.0 us | 1.04 us (~1.0x) |
+| quarterly | 666.0 ns | _708.0 ns (1.1x slower)_ |
+| symbol_months | 958.0 ns | _1.04 us (1.1x slower)_ |
+| symbol_weeks | 416.0 ns | _541.0 ns (1.3x slower)_ |
+| weekly | 416.0 ns | _458.0 ns (1.1x slower)_ |
+| yearly | 458.0 ns | 458.0 ns (~1.0x) |
+| **── medium ──** |  |  |
+| monthly | 22.5 us | 22.42 us (~1.0x) |
+| quarterly | 16.33 us | 15.88 us (~1.0x) |
+| symbol_months | 22.38 us | 22.42 us (~1.0x) |
+| symbol_weeks | 10.83 us | **10.17 us (1.1x faster)** |
+| weekly | 11.04 us | **9.96 us (1.1x faster)** |
+| yearly | 8.83 us | 8.83 us (~1.0x) |
+| **── large ──** |  |  |
+| monthly | 884.17 us | 882.67 us (~1.0x) |
+| quarterly | 621.08 us | 623.12 us (~1.0x) |
+| symbol_months | 883.04 us | 862.08 us (~1.0x) |
+| symbol_weeks | 398.71 us | **377.12 us (1.1x faster)** |
+| weekly | 385.17 us | 395.62 us (~1.0x) |
+| yearly | 343.54 us | 337.0 us (~1.0x) |
 
 ## join
 
-| Benchmark | v0.2.2 | v0.3.1 | v0.3.2 |
-|---|---|---|---|
-| large/inner | 3.42 ms | 3.5 ms (~1.0x) | 3.4 ms (~1.0x) |
-| large/left | 6.18 ms | _6.51 ms (1.1x slower)_ | 6.04 ms (~1.0x) |
-| large/outer | 9.08 ms | 9.36 ms (~1.0x) | 9.09 ms (~1.0x) |
-| medium/inner | 62.83 us | 62.12 us (~1.0x) | 61.79 us (~1.0x) |
-| medium/left | 73.58 us | 72.58 us (~1.0x) | 72.33 us (~1.0x) |
-| medium/outer | 101.75 us | 101.33 us (~1.0x) | 100.71 us (~1.0x) |
-| small/inner | 8.62 us | **7.88 us (1.1x faster)** | **7.71 us (1.1x faster)** |
-| small/left | 9.08 us | **8.33 us (1.1x faster)** | **8.21 us (1.1x faster)** |
-| small/outer | 9.96 us | **9.17 us (1.1x faster)** | **9.0 us (1.1x faster)** |
+Time-series join operations (inner/outer/left)
+
+| Benchmark | v0.2.2 | v0.3.2 |
+|---|---|---|
+| **── small ──** |  |  |
+| inner | 15.29 us | **14.5 us (1.1x faster)** |
+| left | 19.71 us | **18.71 us (1.1x faster)** |
+| outer | 25.38 us | 24.33 us (~1.0x) |
+| **── medium ──** |  |  |
+| inner | 99.29 us | 98.42 us (~1.0x) |
+| left | 165.33 us | 164.62 us (~1.0x) |
+| outer | 235.79 us | 234.71 us (~1.0x) |
+| **── large ──** |  |  |
+| inner | 3.52 ms | 3.52 ms (~1.0x) |
+| left | 6.52 ms | 6.39 ms (~1.0x) |
+| outer | 9.51 ms | 9.78 ms (~1.0x) |
 
 ## lag_lead_diff
 
-| Benchmark | v0.2.2 | v0.3.1 | v0.3.2 |
-|---|---|---|---|
-| large/diff_1 | 10.41 ms | **4.14 ms (2.5x faster)** | **4.72 ms (2.2x faster)** |
-| large/diff_5 | 10.2 ms | **4.14 ms (2.5x faster)** | **4.72 ms (2.2x faster)** |
-| large/lag_1 | 4.26 ms | **1.62 ms (2.6x faster)** | **1.68 ms (2.5x faster)** |
-| large/lag_5 | 4.38 ms | **1.68 ms (2.6x faster)** | **1.66 ms (2.6x faster)** |
-| large/lead_1 | 4.33 ms | **1.64 ms (2.6x faster)** | **1.66 ms (2.6x faster)** |
-| large/lead_5 | 4.42 ms | **1.61 ms (2.7x faster)** | **1.67 ms (2.6x faster)** |
-| large/pctchange_1 | 17.16 ms | **5.63 ms (3.0x faster)** | **5.62 ms (3.1x faster)** |
-| large/pctchange_5 | 17.07 ms | **5.6 ms (3.1x faster)** | **5.59 ms (3.1x faster)** |
-| medium/diff_1 | 106.21 us | **47.92 us (2.2x faster)** | **48.42 us (2.2x faster)** |
-| medium/diff_5 | 105.29 us | **47.88 us (2.2x faster)** | **48.58 us (2.2x faster)** |
-| medium/lag_1 | 44.62 us | **18.04 us (2.5x faster)** | **17.96 us (2.5x faster)** |
-| medium/lag_5 | 44.71 us | **18.04 us (2.5x faster)** | **18.04 us (2.5x faster)** |
-| medium/lead_1 | 44.67 us | **18.0 us (2.5x faster)** | **17.96 us (2.5x faster)** |
-| medium/lead_5 | 44.71 us | **18.04 us (2.5x faster)** | **17.96 us (2.5x faster)** |
-| medium/pctchange_1 | 168.38 us | **61.42 us (2.7x faster)** | **61.88 us (2.7x faster)** |
-| medium/pctchange_5 | 168.29 us | **61.54 us (2.7x faster)** | **61.62 us (2.7x faster)** |
-| small/diff_1 | 13.21 us | **9.0 us (1.5x faster)** | **9.62 us (1.4x faster)** |
-| small/diff_5 | 13.04 us | **9.04 us (1.4x faster)** | **9.62 us (1.4x faster)** |
-| small/lag_1 | 3.88 us | **2.0 us (1.9x faster)** | **2.04 us (1.9x faster)** |
-| small/lag_5 | 3.83 us | **2.04 us (1.9x faster)** | **2.08 us (1.8x faster)** |
-| small/lead_1 | 3.75 us | **2.04 us (1.8x faster)** | **2.04 us (1.8x faster)** |
-| small/lead_5 | 3.88 us | **2.08 us (1.9x faster)** | **2.0 us (1.9x faster)** |
-| small/pctchange_1 | 18.46 us | **9.12 us (2.0x faster)** | **9.79 us (1.9x faster)** |
-| small/pctchange_5 | 18.42 us | **9.17 us (2.0x faster)** | **9.88 us (1.9x faster)** |
+Lag, lead, diff, and pctchange operations
+
+| Benchmark | v0.2.2 | v0.3.2 |
+|---|---|---|
+| **── small ──** |  |  |
+| diff_1 | 29.62 us | **16.04 us (1.8x faster)** |
+| diff_5 | 30.88 us | **15.75 us (2.0x faster)** |
+| lag_1 | 11.21 us | **3.92 us (2.9x faster)** |
+| lag_5 | 11.33 us | **4.04 us (2.8x faster)** |
+| lead_1 | 11.17 us | **3.92 us (2.9x faster)** |
+| lead_5 | 11.25 us | **3.92 us (2.9x faster)** |
+| pctchange_1 | 47.08 us | **16.96 us (2.8x faster)** |
+| pctchange_5 | 46.5 us | **17.04 us (2.7x faster)** |
+| **── medium ──** |  |  |
+| diff_1 | 256.71 us | **112.17 us (2.3x faster)** |
+| diff_5 | 255.33 us | **108.75 us (2.3x faster)** |
+| lag_1 | 105.38 us | **41.38 us (2.5x faster)** |
+| lag_5 | 105.79 us | **41.42 us (2.6x faster)** |
+| lead_1 | 104.67 us | **41.33 us (2.5x faster)** |
+| lead_5 | 105.42 us | **41.21 us (2.6x faster)** |
+| pctchange_1 | 401.21 us | **135.0 us (3.0x faster)** |
+| pctchange_5 | 405.25 us | **139.42 us (2.9x faster)** |
+| **── large ──** |  |  |
+| diff_1 | 10.6 ms | **4.92 ms (2.2x faster)** |
+| diff_5 | 10.78 ms | **4.67 ms (2.3x faster)** |
+| lag_1 | 4.55 ms | **1.74 ms (2.6x faster)** |
+| lag_5 | 4.44 ms | **1.72 ms (2.6x faster)** |
+| lead_1 | 4.45 ms | **1.68 ms (2.6x faster)** |
+| lead_5 | 4.44 ms | **1.69 ms (2.6x faster)** |
+| pctchange_1 | 17.46 ms | **5.84 ms (3.0x faster)** |
+| pctchange_5 | 17.81 ms | **5.79 ms (3.1x faster)** |
 
 ## resample_vs_to_period
 
-| Benchmark | v0.2.2 | v0.3.1 | v0.3.2 |
-|---|---|---|---|
-| large/to_period/monthly | 1.02 ms | **944.42 us (1.1x faster)** | **944.08 us (1.1x faster)** |
-| large/to_period/quarterly | 657.25 us | 626.0 us (~1.0x) | 626.12 us (~1.0x) |
-| large/to_period/weekly | 968.67 us | **651.0 us (1.5x faster)** | **650.75 us (1.5x faster)** |
-| large/to_period/yearly | 359.62 us | **341.79 us (1.1x faster)** | **341.21 us (1.1x faster)** |
-| medium/to_period/monthly | 14.04 us | **10.58 us (1.3x faster)** | **10.33 us (1.4x faster)** |
-| medium/to_period/quarterly | 9.46 us | **7.33 us (1.3x faster)** | **7.38 us (1.3x faster)** |
-| medium/to_period/weekly | 17.29 us | **7.25 us (2.4x faster)** | **7.25 us (2.4x faster)** |
-| medium/to_period/yearly | 6.33 us | **4.54 us (1.4x faster)** | **4.5 us (1.4x faster)** |
-| small/to_period/monthly | 2.46 us | **875.0 ns (2.8x faster)** | **833.0 ns (3.0x faster)** |
-| small/to_period/quarterly | 2.54 us | **875.0 ns (2.9x faster)** | **875.0 ns (2.9x faster)** |
-| small/to_period/weekly | 2.46 us | **791.0 ns (3.1x faster)** | **750.0 ns (3.3x faster)** |
-| small/to_period/yearly | 2.42 us | **791.0 ns (3.1x faster)** | **833.0 ns (2.9x faster)** |
+Comparison of resample() vs to_period() for period-based aggregation
+
+<table>
+<thead>
+<tr><th rowspan="2">Benchmark</th><th colspan="2">v0.2.2</th><th colspan="2">v0.3.2</th></tr>
+<tr><th>to_period</th><th>resample</th><th>to_period</th><th>resample</th></tr>
+</thead>
+<tbody>
+<tr><td colspan="5"><strong>── small ──</strong></td></tr>
+<tr><td>weekly</td><td>3.62 us</td><td></td><td><strong>1.38 us (2.6x faster)</strong></td><td>1.42 us</td></tr>
+<tr><td>monthly</td><td>3.71 us</td><td></td><td><strong>1.75 us (2.1x faster)</strong></td><td>1.75 us</td></tr>
+<tr><td>quarterly</td><td>3.33 us</td><td></td><td><strong>1.5 us (2.2x faster)</strong></td><td>1.5 us</td></tr>
+<tr><td>yearly</td><td>2.83 us</td><td></td><td><strong>1.17 us (2.4x faster)</strong></td><td>1.12 us</td></tr>
+<tr><td colspan="5"><strong>── medium ──</strong></td></tr>
+<tr><td>weekly</td><td>40.71 us</td><td></td><td><strong>18.04 us (2.3x faster)</strong></td><td>17.71 us</td></tr>
+<tr><td>monthly</td><td>31.25 us</td><td></td><td><strong>25.0 us (1.2x faster)</strong></td><td>25.17 us</td></tr>
+<tr><td>quarterly</td><td>21.08 us</td><td></td><td><strong>17.29 us (1.2x faster)</strong></td><td>17.46 us</td></tr>
+<tr><td>yearly</td><td>11.96 us</td><td></td><td><strong>9.88 us (1.2x faster)</strong></td><td>9.92 us</td></tr>
+<tr><td colspan="5"><strong>── large ──</strong></td></tr>
+<tr><td>weekly</td><td>1.0 ms</td><td></td><td><strong>694.33 us (1.4x faster)</strong></td><td>668.46 us</td></tr>
+<tr><td>monthly</td><td>1.06 ms</td><td></td><td><strong>982.12 us (1.1x faster)</strong></td><td>988.88 us</td></tr>
+<tr><td>quarterly</td><td>675.33 us</td><td></td><td>646.5 us (~1.0x)</td><td>643.33 us</td></tr>
+<tr><td>yearly</td><td>368.79 us</td><td></td><td><strong>350.67 us (1.1x faster)</strong></td><td>350.83 us</td></tr>
+</tbody>
+</table>
+
+### Additional resample benchmarks
+
+| Benchmark | v0.2.2 | v0.3.2 |
+|---|---|---|
+| **── small ──** |  |  |
+| resample_mean/monthly_mean | N/A | 2.38 us |
+| resample_mean/weekly_mean | N/A | 2.12 us |
+| resample_ohlcv/monthly_default | N/A | 2.71 us |
+| resample_ohlcv/monthly_explicit | N/A | 2.79 us |
+| resample_ohlcv/weekly_default | N/A | 2.75 us |
+| **── medium ──** |  |  |
+| resample_mean/monthly_mean | N/A | 34.17 us |
+| resample_mean/weekly_mean | N/A | 33.75 us |
+| resample_ohlcv/monthly_default | N/A | 37.33 us |
+| resample_ohlcv/monthly_explicit | N/A | 37.54 us |
+| resample_ohlcv/weekly_default | N/A | 37.92 us |
+| **── large ──** |  |  |
+| resample_mean/monthly_mean | N/A | 1.35 ms |
+| resample_mean/weekly_mean | N/A | 1.35 ms |
+| resample_ohlcv/monthly_default | N/A | 1.53 ms |
+| resample_ohlcv/monthly_explicit | N/A | 1.51 ms |
+| resample_ohlcv/weekly_default | N/A | 1.5 ms |
 
 ## rollapply
 
-| Benchmark | v0.2.2 | v0.3.1 | v0.3.2 |
-|---|---|---|---|
-| large/mean_w5 | 1.93 s | **763.14 ms (2.5x faster)** | **757.74 ms (2.5x faster)** |
-| large/sum_w20 | 1.93 s | **839.19 ms (2.3x faster)** | **797.67 ms (2.4x faster)** |
-| medium/mean_w5 | 80.04 ms | **66.58 ms (1.2x faster)** | **64.76 ms (1.2x faster)** |
-| medium/std_w10 | 82.32 ms | **66.64 ms (1.2x faster)** | **63.84 ms (1.3x faster)** |
-| medium/sum_w20 | 83.57 ms | **66.84 ms (1.3x faster)** | **65.33 ms (1.3x faster)** |
-| small/mean_w5 | 577.96 us | 550.79 us (~1.0x) | 550.92 us (~1.0x) |
-| small/std_w10 | 547.04 us | 521.38 us (~1.0x) | 523.71 us (~1.0x) |
-| small/sum_w20 | 489.33 us | 467.42 us (~1.0x) | 468.5 us (~1.0x) |
+Rolling window operations (mean/sum/std)
+
+| Benchmark | v0.2.2 | v0.3.2 |
+|---|---|---|
+| **── small ──** |  |  |
+| mean_w5 | 6.96 ms | 6.68 ms (~1.0x) |
+| std_w10 | 6.95 ms | **6.57 ms (1.1x faster)** |
+| sum_w20 | 6.88 ms | **6.48 ms (1.1x faster)** |
+| **── medium ──** |  |  |
+| mean_w5 | 253.0 ms | **177.76 ms (1.4x faster)** |
+| std_w10 | 252.72 ms | **177.74 ms (1.4x faster)** |
+| sum_w20 | 256.43 ms | **183.3 ms (1.4x faster)** |
+| **── large ──** |  |  |
+| mean_w5 | 2.04 s | **845.66 ms (2.4x faster)** |
+| sum_w20 | 2.04 s | **879.52 ms (2.3x faster)** |
 
 ## vcat
 
-| Benchmark | v0.2.2 | v0.3.1 | v0.3.2 |
-|---|---|---|---|
-| large/diff_cols_union | 6.63 ms | 6.74 ms (~1.0x) | 6.54 ms (~1.0x) |
-| large/same_cols_union | 4.06 ms | 4.18 ms (~1.0x) | 4.01 ms (~1.0x) |
-| medium/diff_cols_union | 80.67 us | 80.38 us (~1.0x) | 80.83 us (~1.0x) |
-| medium/same_cols_union | 47.25 us | 46.88 us (~1.0x) | 46.83 us (~1.0x) |
-| small/diff_cols_union | 19.21 us | 19.58 us (~1.0x) | 20.0 us (~1.0x) |
-| small/same_cols_union | 8.33 us | 8.25 us (~1.0x) | 8.33 us (~1.0x) |
+Vertical concatenation of TSFrame objects
+
+| Benchmark | v0.2.2 | v0.3.2 |
+|---|---|---|
+| **── small ──** |  |  |
+| diff_cols_intersect | N/A | 14.88 us |
+| diff_cols_union | 33.25 us | _35.12 us (1.1x slower)_ |
+| same_cols_union | 19.75 us | 20.38 us (~1.0x) |
+| **── medium ──** |  |  |
+| diff_cols_intersect | N/A | 74.79 us |
+| diff_cols_union | 173.42 us | 172.88 us (~1.0x) |
+| same_cols_union | 104.33 us | 104.58 us (~1.0x) |
+| **── large ──** |  |  |
+| diff_cols_intersect | N/A | 3.12 ms |
+| diff_cols_union | 6.85 ms | 6.87 ms (~1.0x) |
+| same_cols_union | 4.37 ms | 4.37 ms (~1.0x) |
 

@@ -10,7 +10,7 @@ using TSFrames
 
 const BENCH_CONSTRUCTION = BenchmarkGroup()
 
-for (label, n) in [("small", 100), ("medium", 10_000), ("large", 1_000_000)]
+for (label, n) in [("small", 1_000), ("medium", 25_000), ("large", 1_000_000)]
     rng = MersenneTwister(42)
     dates = Date(2000, 1, 1) .+ Day.(0:n-1)
     close_prices = cumsum(randn(rng, n)) .+ 100.0
