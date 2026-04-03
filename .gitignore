@@ -7,3 +7,7 @@
 /test/Manifest.toml
 /benchmark/results/*.json
 /benchmark/Manifest.toml
+CLAUDE.md
+.claude/*
+.codex/*
+.gemini/*
