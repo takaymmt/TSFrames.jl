@@ -6,6 +6,7 @@
 #
 # Options:
 #   --save <path>              Save results to JSON file
+#   --desc <text>              Description for .meta.json sidecar
 #   --group <g1,g2,...>        Run specific benchmark groups only
 #   --compare <f1> <f2> ...   Compare multiple JSON result files
 #   --report <f1> <f2> ...    Generate Markdown report from JSON files
@@ -41,6 +42,7 @@ function parse_args(args)
         :report   => nothing,
         :tune     => false,
         :verbose  => false,
+        :desc     => "",
     )
 
     i = 1
@@ -70,6 +72,9 @@ function parse_args(args)
             end
             config[:report] = files
             continue
+        elseif arg == "--desc"
+            i += 1
+            config[:desc] = args[i]
         elseif arg == "--tune"
             config[:tune] = true
         elseif arg == "--verbose"
@@ -156,7 +161,7 @@ function run_benchmarks(config)
 
     # Save if requested
     if config[:save] !== nothing
-        save_results(results, config[:save])
+        save_results(results, config[:save]; description=config[:desc])
         log_msg("Results saved to: $(config[:save])")
     end
 
@@ -181,7 +186,7 @@ end
 
 # ── Save / Load ──────────────────────────────────────────────────────────────
 
-function save_results(results, path::String)
+function save_results(results, path::String; description::String="")
     # Ensure directory exists
     dir = dirname(path)
     if !isempty(dir) && !isdir(dir)
@@ -190,6 +195,35 @@ function save_results(results, path::String)
 
     # Serialize using BenchmarkTools' built-in JSON serialization
     BenchmarkTools.save(path, results)
+
+    # Generate sidecar .meta.json
+    fname = replace(basename(path), r"\.json$" => "")
+
+    # Parse filename to determine version/suffix/status
+    m_ver = match(r"^v(\d+\.\d+\.\d+)$", fname)
+    m_tmp = match(r"^tmp-(\w+)$", fname)
+
+    if m_ver !== nothing
+        save_meta(path;
+                  version=String(m_ver.captures[1]),
+                  suffix="",
+                  status="release",
+                  description=description)
+    elseif m_tmp !== nothing
+        # For temporary files, use current project version as the version context
+        save_meta(path;
+                  version="0.0.0",
+                  suffix=String(m_tmp.captures[1]),
+                  status="temporary",
+                  description=description)
+    else
+        # Fallback: save meta with unknown status
+        save_meta(path;
+                  version="0.0.0",
+                  suffix="",
+                  status="unknown",
+                  description=description)
+    end
 end
 
 

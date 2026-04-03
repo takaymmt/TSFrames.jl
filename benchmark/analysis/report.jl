@@ -63,8 +63,14 @@ function generate_report(files::Vector{String}; labels=nothing, output=nothing, 
         error("Need at least 1 file for report.")
     end
 
+    # Sort files by version / temporary status / NATO rank
+    files = sort_result_files(files)
+
     # Load all results
     results = [load_result(f) for f in files]
+
+    # Load metadata for WIP markers
+    metas = [load_meta(f) for f in files]
 
     # Assign labels
     col_labels = if labels !== nothing
@@ -73,7 +79,13 @@ function generate_report(files::Vector{String}; labels=nothing, output=nothing, 
         end
         labels
     else
-        [replace(basename(f), ".json" => "") for f in files]
+        map(enumerate(files)) do (idx, f)
+            label = replace(basename(f), ".json" => "")
+            if get(metas[idx], "status", "") == "temporary"
+                label *= " [WIP]"
+            end
+            label
+        end
     end
 
     has_comparison = length(results) > 1
@@ -143,13 +155,10 @@ function _write_group_table(out, group_name, group_results, col_labels, has_comp
     leaves = collect_leaves(group_results[ref_idx])
     all_paths = [p for (p, _) in leaves]
 
-    # Table header
+    # Table header — no separate Speedup column; speedup is embedded in each version cell
     header_parts = ["Benchmark"]
     for label in col_labels
         push!(header_parts, label)
-    end
-    if has_comparison
-        push!(header_parts, "Speedup vs $(col_labels[1])")
     end
     println(out, "| ", join(header_parts, " | "), " |")
     println(out, "|", join(fill("---", length(header_parts)), "|"), "|")
@@ -180,49 +189,25 @@ function _write_group_table(out, group_name, group_results, col_labels, has_comp
             t = BenchmarkTools.minimum(leaf).time
 
             if idx == 1
-                # Baseline — plain format
+                # Baseline (first column) — plain format
                 push!(row, format_time(t))
             else
-                # Comparison result — show speedup
+                # Subsequent columns — show time with speedup vs baseline
                 if baseline_time !== nothing && baseline_time > 0
                     speedup = baseline_time / t
-                    cell = "$(format_time(t))"
                     if speedup > 1.05
-                        cell = "**$(format_time(t)) ($(round(speedup, digits=1))x)**"
+                        cell = "**$(format_time(t)) ($(round(speedup, digits=1))x faster)**"
                     elseif speedup < (1.0 / 1.05)
                         slowdown = t / baseline_time
                         cell = "_$(format_time(t)) ($(round(slowdown, digits=1))x slower)_"
+                    else
+                        cell = "$(format_time(t)) (~1.0x)"
                     end
                     push!(row, cell)
                 else
                     push!(row, format_time(t))
                 end
             end
-        end
-
-        # Speedup column (last result vs baseline)
-        if has_comparison && baseline_time !== nothing && baseline_time > 0
-            last_result = group_results[end]
-            if last_result !== nothing
-                leaf = navigate_leaf(last_result, path)
-                if leaf !== nothing
-                    t = BenchmarkTools.minimum(leaf).time
-                    speedup = baseline_time / t
-                    if speedup > 1.05
-                        push!(row, "**$(round(speedup, digits=1))x**")
-                    elseif speedup < (1.0 / 1.05)
-                        push!(row, "_$(round(1/speedup, digits=1))x slower_")
-                    else
-                        push!(row, "~1.0x")
-                    end
-                else
-                    push!(row, "N/A")
-                end
-            else
-                push!(row, "N/A")
-            end
-        elseif has_comparison
-            push!(row, "N/A")
         end
 
         println(out, "| ", join(row, " | "), " |")

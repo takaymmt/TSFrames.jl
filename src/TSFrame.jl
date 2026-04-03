@@ -362,10 +362,14 @@ struct TSFrame
         if issorted
             sorted_index = copycols ? copy(index) : index
             cd = copy(coredata)
+        elseif Base.issorted(index)
+            sorted_index = copycols ? copy(index) : index
+            cd = copy(coredata)
         else
             perm = sortperm(index)
             sorted_index = index[perm]
-            cd = coredata[perm, :]
+            cd = copy(coredata)
+            permute!(cd, perm)
         end
         insertcols!(cd, 1, :Index => sorted_index, after=false, copycols = copycols)
 
