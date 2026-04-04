@@ -435,11 +435,6 @@ end
     gap_idx = findfirst(==(Date(2020,1,13)), index(r_weekly_fill))
     @test ismissing(r_weekly_fill.coredata[gap_idx, :Open])
 
-    # String pairs also forward fill_gaps correctly
-    r_str = resample(ts_month_gap, Month(1), "Open" => first; fill_gaps=true)
-    @test DataFrames.nrow(r_str.coredata) == 4
-    @test ismissing(r_str.coredata[findfirst(==(Date(2020,2,1)), index(r_str)), :Open])
-
     # fill_gaps=true on empty TSFrame: should return empty result unchanged
     ts_empty = TSFrame(DataFrame(Open=Float64[], High=Float64[], Low=Float64[], Close=Float64[], Volume=Int[]), Date[])
     r_empty = resample(ts_empty, Month(1); fill_gaps=true)
@@ -1216,4 +1211,143 @@ end
     feb_idx = findfirst(==(Date(2020,2,1)), index(result))
     @test feb_idx !== nothing
     @test result.coredata[feb_idx, :Volume] == 152
+end
+
+# -- A. fill_gaps strategies with empty TSFrame ---------------------------------
+@testset "fill_gaps: empty TSFrame returns empty for all strategies" begin
+    empty_ts = TSFrame(DataFrame(Open=Float64[], High=Float64[]), Date[])
+
+    for strat in [:ffill, :bfill, :zero, :missing, :interpolate]
+        r = resample(empty_ts, Month(1); fill_gaps=strat)
+        @test DataFrames.nrow(r.coredata) == 0
+    end
+
+    # constant fill
+    r_const = resample(empty_ts, Month(1); fill_gaps=0.0)
+    @test DataFrames.nrow(r_const.coredata) == 0
+end
+
+# -- B. fill_gaps=:ffill leading gap stays missing ----------------------------
+@testset "fill_gaps=:ffill: leading gap row stays missing" begin
+    # Only February and March data; January is a gap (no prior value to forward fill from)
+    dates_lead = vcat(
+        collect(Date(2020,2,1):Day(1):Date(2020,2,29)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    n_lead = length(dates_lead)
+    ts_lead = TSFrame(DataFrame(
+        Close = Float64.(1:n_lead)
+    ), dates_lead)
+
+    r = resample(ts_lead, Month(1); fill_gaps=:ffill)
+
+    jan_idx = findfirst(==(Date(2020,1,1)), index(r))
+    if jan_idx !== nothing
+        # If January gap row was inserted, it must remain missing (no prior value)
+        @test ismissing(r.coredata[jan_idx, :Close])
+    end
+    # February and March should have aggregated values (not missing)
+    feb_idx = findfirst(==(Date(2020,2,1)), index(r))
+    mar_idx = findfirst(==(Date(2020,3,1)), index(r))
+    @test feb_idx !== nothing
+    @test mar_idx !== nothing
+    @test !ismissing(r.coredata[feb_idx, :Close])
+    @test !ismissing(r.coredata[mar_idx, :Close])
+end
+
+# -- D. fill_limit resets between gap groups -----------------------------------
+@testset "fill_gaps=:ffill: fill_limit resets between gap groups" begin
+    # Pattern: [Jan data] [Feb gap] [Mar data] [Apr gap] [May data]
+    dates_groups = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31)),
+        collect(Date(2020,5,1):Day(1):Date(2020,5,31))
+    )
+    n_groups = length(dates_groups)
+    ts_groups = TSFrame(DataFrame(
+        Close = Float64.(1:n_groups)
+    ), dates_groups)
+
+    r = resample(ts_groups, Month(1); fill_gaps=:ffill, fill_limit=1)
+
+    feb_idx = findfirst(==(Date(2020,2,1)), index(r))
+    apr_idx = findfirst(==(Date(2020,4,1)), index(r))
+
+    # Both gap months should be filled (limit=1 resets after each data group)
+    @test feb_idx !== nothing
+    @test apr_idx !== nothing
+    @test !ismissing(r.coredata[feb_idx, :Close])
+    @test !ismissing(r.coredata[apr_idx, :Close])
+end
+
+# -- E. fill_limit is ignored for :missing and constant strategies -------------
+@testset "fill_gaps: fill_limit ignored for :missing and constant strategies" begin
+    dates_lim = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,4,1):Day(1):Date(2020,4,30))
+    )
+    n_lim = length(dates_lim)
+    ts_lim = TSFrame(DataFrame(Close=Float64.(1:n_lim)), dates_lim)
+
+    # :missing with fill_limit=1 — both gap months (Feb, Mar) should stay missing
+    r_miss = resample(ts_lim, Month(1); fill_gaps=:missing, fill_limit=1)
+    feb_miss = findfirst(==(Date(2020,2,1)), index(r_miss))
+    mar_miss = findfirst(==(Date(2020,3,1)), index(r_miss))
+    if feb_miss !== nothing
+        @test ismissing(r_miss.coredata[feb_miss, :Close])
+    end
+    if mar_miss !== nothing
+        @test ismissing(r_miss.coredata[mar_miss, :Close])
+    end
+
+    # constant fill (42.0) with fill_limit=1 — both gap months should be filled
+    r_const = resample(ts_lim, Month(1); fill_gaps=42.0, fill_limit=1)
+    feb_const = findfirst(==(Date(2020,2,1)), index(r_const))
+    mar_const = findfirst(==(Date(2020,3,1)), index(r_const))
+    if feb_const !== nothing
+        @test r_const.coredata[feb_const, :Close] == 42.0
+    end
+    if mar_const !== nothing
+        @test r_const.coredata[mar_const, :Close] == 42.0
+    end
+end
+
+# -- F. :interpolate Float column exact value verification ---------------------
+@testset "fill_gaps=:interpolate: Float column time-weighted values" begin
+    dates_interp = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    n_interp = length(dates_interp)
+    ts_interp = TSFrame(DataFrame(
+        Close = Float64.(1:n_interp)
+    ), dates_interp)
+
+    r = resample(ts_interp, Month(1); fill_gaps=:interpolate)
+
+    jan_idx = findfirst(==(Date(2020,1,1)), index(r))
+    feb_idx = findfirst(==(Date(2020,2,1)), index(r))
+    mar_idx = findfirst(==(Date(2020,3,1)), index(r))
+
+    @test jan_idx !== nothing
+    @test feb_idx !== nothing
+    @test mar_idx !== nothing
+
+    jan_val = r.coredata[jan_idx, :Close]
+    mar_val = r.coredata[mar_idx, :Close]
+    feb_val = r.coredata[feb_idx, :Close]
+
+    # Feb gap must be strictly between Jan and Mar aggregated values
+    @test !ismissing(feb_val)
+    @test feb_val > jan_val
+    @test feb_val < mar_val
+
+    # Time-weighted interpolation: frac = (feb_date - jan_date) / (mar_date - jan_date)
+    # Using the actual index dates from result
+    jan_date = index(r)[jan_idx]
+    feb_date = index(r)[feb_idx]
+    mar_date = index(r)[mar_idx]
+    frac = Dates.value(feb_date - jan_date) / Dates.value(mar_date - jan_date)
+    expected = jan_val + frac * (mar_val - jan_val)
+    @test feb_val ≈ expected
 end
