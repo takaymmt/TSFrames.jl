@@ -69,6 +69,9 @@ const _OHLCV_DEFAULT_AGG = (
     :Volume => sum,
 )
 
+# Valid symbolic fill strategies
+const _VALID_FILL_SYMBOLS = (:missing, :ffill, :bfill, :zero, :interpolate)
+
 # Internal: single-pass @view iteration — no copy, no groupby, no combine.
 # Uses column-major access (outer=columns, inner=groups) for cache efficiency.
 #
@@ -141,6 +144,9 @@ function resample(
             "No standard OHLCV columns (Open, High, Low, Close, Volume) found. " *
             "Use resample(ts, period, :col => fn, ...) to specify columns explicitly."
         ))
+    if fill_limit !== nothing && fill_limit < 1
+        throw(ArgumentError("fill_limit must be a positive integer or nothing, got $fill_limit"))
+    end
     result = _resample_core(ts, period, _OHLCV_DEFAULT_AGG, index_at, renamecols)
     fill_gaps !== false ? _fill_period_gaps(result, ts, period, index_at, fill_gaps, fill_limit) : result
 end
@@ -159,6 +165,9 @@ function resample(
         hasproperty(ts.coredata, col) ||
             throw(ArgumentError("Column :$col not found in TSFrame"))
     end
+    if fill_limit !== nothing && fill_limit < 1
+        throw(ArgumentError("fill_limit must be a positive integer or nothing, got $fill_limit"))
+    end
     result = _resample_core(ts, period, col_agg_pairs, index_at, renamecols)
     fill_gaps !== false ? _fill_period_gaps(result, ts, period, index_at, fill_gaps, fill_limit) : result
 end
@@ -173,6 +182,9 @@ function resample(
     index_at::Function                    = first,
     renamecols::Bool                      = false,
 ) where {T<:Dates.Period}
+    if fill_limit !== nothing && fill_limit < 1
+        throw(ArgumentError("fill_limit must be a positive integer or nothing, got $fill_limit"))
+    end
     sym_pairs = Tuple(Symbol(col) => fn for (col, fn) in col_agg_pairs)
     resample(ts, period, sym_pairs...; fill_gaps=fill_gaps, fill_limit=fill_limit, index_at=index_at, renamecols=renamecols)
 end
@@ -232,8 +244,8 @@ function _apply_interpolate_gaps!(combined::DataFrame, is_gap::AbstractVector{Bo
 
     for col in names(combined, Not(:Index))
         v = combined[!, col]
-        T = nonmissingtype(eltype(v))
-        T <: AbstractFloat || continue  # skip non-float columns (Int interpolation → InexactError)
+        ElemT = nonmissingtype(eltype(v))
+        ElemT <: Number || continue  # skip non-numeric columns
 
         for i in 1:n
             (is_gap[i] && ismissing(v[i])) || continue
@@ -253,8 +265,15 @@ function _apply_interpolate_gaps!(combined::DataFrame, is_gap::AbstractVector{Bo
                 t_lo = Dates.value(idx_col[lo])
                 t_hi = Dates.value(idx_col[hi])
                 t_i  = Dates.value(idx_col[i])
-                frac = (t_i - t_lo) / (t_hi - t_lo)
-                v[i] = v[lo] + frac * (v[hi] - v[lo])
+                denom = t_hi - t_lo
+                if denom == 0
+                    v[i] = v[lo]  # duplicate timestamps: use left anchor
+                else
+                    frac = (t_i - t_lo) / denom
+                    v[i] = ElemT <: AbstractFloat ?
+                        v[lo] + frac * (v[hi] - v[lo]) :
+                        round(ElemT, v[lo] + frac * (v[hi] - v[lo]))
+                end
             elseif lo >= 1
                 v[i] = v[lo]  # extrapolate left if no right anchor
             elseif hi <= n
@@ -319,11 +338,20 @@ function _fill_period_gaps(
     # Normalize: true (backward compat) → :missing; false should never reach here.
     effective = fill_strategy === true ? :missing : fill_strategy
 
+    # Validate symbolic fill strategy
+    if effective isa Symbol && effective ∉ _VALID_FILL_SYMBOLS
+        throw(ArgumentError(
+            "Invalid fill_gaps strategy: :$effective. " *
+            "Valid symbols are: $(join(string.(':', collect(_VALID_FILL_SYMBOLS)), ", "))"
+        ))
+    end
+
     if effective !== :missing
         # Build gap position mask
         gap_label_set = Set(gap_labels)
         n = size(combined, 1)
-        is_gap = [combined[i, :Index] in gap_label_set for i in 1:n]
+        idx_vec = combined[!, :Index]
+        is_gap = [idx_vec[i] in gap_label_set for i in 1:n]
 
         for col in names(combined, Not(:Index))
             v = combined[!, col]

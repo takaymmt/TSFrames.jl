@@ -1105,3 +1105,115 @@ end
     feb_idx_lip = findfirst(==(Date(2020,2,29)), index(r_last_ip))
     @test !ismissing(r_last_ip.coredata[feb_idx_lip, :Open])
 end
+
+# -- 30. fill_gaps invalid strategy throws ArgumentError ------------------------------
+
+@testset "fill_gaps invalid strategy throws ArgumentError" begin
+    dates = [Date(2020,1,1), Date(2020,3,1)]
+    df = DataFrame(Open=[1.0, 2.0], Close=[1.1, 2.1])
+    ts = TSFrame(df, dates)
+    @test_throws ArgumentError resample(ts, Month(1); fill_gaps=:invalid)
+    @test_throws ArgumentError resample(ts, Month(1); fill_gaps=:unknown_strategy)
+    @test_throws ArgumentError resample(ts, Month(1); fill_gaps=:FFILL)  # case-sensitive
+end
+
+# -- 27b. fill_gaps pre-existing missing preservation (:interpolate + constant) -------
+
+@testset "fill_gaps pre-existing missing preservation (:interpolate and constant)" begin
+    # Same data structure as testset #27: non-gap row has pre-existing missing in column
+    dates_pm2 = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    npm2 = length(dates_pm2)
+
+    # Put missing in the first element of January (non-gap data)
+    vals_pm2 = Union{Float64,Missing}[i == 1 ? missing : Float64(i) for i in 1:npm2]
+    ts_pm2 = TSFrame(DataFrame(val = vals_pm2), dates_pm2)
+
+    # ── :interpolate: pre-existing missing in aggregated non-gap row stays missing ──
+    r_ip = resample(ts_pm2, Month(1), :val => first; fill_gaps=:interpolate)
+    jan_idx_ip = findfirst(==(Date(2020,1,1)), index(r_ip))
+    # first(vals for January) = missing (row 1 is missing)
+    @test ismissing(r_ip.coredata[jan_idx_ip, :val])
+
+    # Feb gap: interpolate should fill with a value (between Jan and Mar)
+    # but since Jan is missing, the left anchor for interpolation is missing,
+    # so Feb may remain missing (implementation-dependent). We just check Jan is preserved.
+    feb_idx_ip = findfirst(==(Date(2020,2,1)), index(r_ip))
+    @test feb_idx_ip !== nothing  # Feb row exists
+
+    # ── constant fill (99.0): pre-existing missing in non-gap row stays missing ──
+    r_const = resample(ts_pm2, Month(1), :val => first; fill_gaps=99.0)
+    jan_idx_c = findfirst(==(Date(2020,1,1)), index(r_const))
+    @test ismissing(r_const.coredata[jan_idx_c, :val])  # pre-existing missing preserved
+    feb_idx_c = findfirst(==(Date(2020,2,1)), index(r_const))
+    @test r_const.coredata[feb_idx_c, :val] == 99.0  # gap row filled with constant
+end
+
+# -- 31. fill_limit=0 throws ArgumentError (validation) ------------------------------
+
+@testset "fill_limit=0 throws ArgumentError (validation)" begin
+    dates = [Date(2020,1,1), Date(2020,3,1)]
+    df = DataFrame(Open=[1.0, 2.0])
+    ts = TSFrame(df, dates)
+    @test_throws ArgumentError resample(ts, Month(1); fill_gaps=:ffill, fill_limit=0)
+    @test_throws ArgumentError resample(ts, Month(1); fill_gaps=:ffill, fill_limit=-1)
+end
+
+# -- 32. fill_gaps :ffill fills last-period gap ---------------------------------------
+
+@testset "fill_gaps :ffill fills last-period gap" begin
+    # Data in Jan + Mar only → Feb is a gap
+    # :ffill should fill Feb from Jan's aggregated value
+    dates2 = [Date(2020,1,15), Date(2020,3,15)]
+    df2 = DataFrame(Close=[10.0, 30.0])
+    ts2 = TSFrame(df2, dates2)
+    result = resample(ts2, Month(1); fill_gaps=:ffill)
+    # Expect 3 rows: Jan, Feb (gap), Mar
+    @test size(result.coredata, 1) == 3
+    # Feb should be filled from Jan (10.0)
+    feb_idx = findfirst(==(Date(2020,2,1)), index(result))
+    @test feb_idx !== nothing
+    @test result.coredata[feb_idx, :Close] == 10.0
+    @test !ismissing(result.coredata[feb_idx, :Close])
+end
+
+# -- 33. fill_limit ignored for non-directional strategies ----------------------------
+
+@testset "fill_limit ignored for non-directional strategies" begin
+    dates = [Date(2020,1,1), Date(2020,4,1)]  # Feb and Mar are gaps
+    df = DataFrame(Close=[10.0, 40.0])
+    ts = TSFrame(df, dates)
+
+    # For :zero, fill_limit=1 should still fill ALL gap rows (fill_limit is ignored)
+    result = resample(ts, Month(1); fill_gaps=:zero, fill_limit=1)
+    feb_idx = findfirst(==(Date(2020,2,1)), index(result))
+    mar_idx = findfirst(==(Date(2020,3,1)), index(result))
+    @test result.coredata[feb_idx, :Close] == 0.0   # Feb gap → zero
+    @test result.coredata[mar_idx, :Close] == 0.0   # Mar gap → zero (not limited)
+
+    # For :interpolate, fill_limit=1 should still fill ALL gap rows
+    result2 = resample(ts, Month(1); fill_gaps=:interpolate, fill_limit=1)
+    feb_idx2 = findfirst(==(Date(2020,2,1)), index(result2))
+    mar_idx2 = findfirst(==(Date(2020,3,1)), index(result2))
+    @test !ismissing(result2.coredata[feb_idx2, :Close])
+    @test !ismissing(result2.coredata[mar_idx2, :Close])
+end
+
+# -- 34. fill_gaps :interpolate with Int column ---------------------------------------
+
+@testset "fill_gaps :interpolate with Int column" begin
+    # Int columns should now be interpolated with round()
+    dates = [Date(2020,1,1), Date(2020,3,1)]  # Feb is a gap
+    df = DataFrame(Volume=[100, 200])
+    ts = TSFrame(df, dates)
+    result = resample(ts, Month(1); fill_gaps=:interpolate)
+    @test size(result.coredata, 1) == 3
+    # Feb gap: interpolate between 100 and 200
+    # 2020 is a leap year: Jan1→Mar1 = 60 days, Feb1 is 31 days after Jan1
+    # frac = 31/60 → round(Int64, 100 + 31/60 * 100) = round(151.67) = 152
+    feb_idx = findfirst(==(Date(2020,2,1)), index(result))
+    @test feb_idx !== nothing
+    @test result.coredata[feb_idx, :Volume] == 152
+end
