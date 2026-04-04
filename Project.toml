@@ -17,13 +17,13 @@ Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [compat]
 BenchmarkTools = "1.7.0"
-DataFrames = "1.8"
+DataFrames = "1.7"
 RecipesBase = "1.3"
 RollingFunctions = "0.8"
 ShiftedArrays = "2"
 StatsBase = "0.34"
 Tables = "1"
-julia = "1.12"
+julia = "1.10"
 
 [extras]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"

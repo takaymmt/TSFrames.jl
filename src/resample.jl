@@ -283,8 +283,91 @@ function _apply_interpolate_gaps!(combined::DataFrame, is_gap::AbstractVector{Bo
     end
 end
 
-# Internal: insert missing rows for periods that have no data.
-# Gap period labels use calendar-aligned period starts (consistent with SQL time-series DBs).
+# ── Sub-functions for _fill_period_gaps ───────────────────────────────────
+
+# Two-pointer sweep over calendar boundaries: detect periods with no source data.
+# Gap labels use calendar-aligned period starts (consistent with SQL time-series DBs).
+function _detect_gap_labels(idx, period::T, index_at::IA) where {T<:Dates.Period, IA<:Function}
+    # First calendar-aligned period boundary (same floor/trunc logic as endpoints()).
+    first_boundary = period isa Week ? floor(first(idx), typeof(period)) : trunc(first(idx), typeof(period))
+
+    gap_labels = eltype(idx)[]
+    j = 1
+    for lo in first_boundary:period:last(idx)
+        hi = lo + period
+        while j <= length(idx) && idx[j] < lo
+            j += 1
+        end
+        if j > length(idx) || idx[j] >= hi
+            # Gap label for index_at=last: last moment of the period.
+            # Date index: subtract 1 day; DateTime index: subtract 1 millisecond.
+            label = index_at === last ? (eltype(idx) == Date ? hi - Day(1) : hi - Millisecond(1)) : lo
+            push!(gap_labels, label)
+        end
+    end
+    return gap_labels
+end
+
+# Build gap rows, widen result columns to Union{Missing,T}, and return sorted combined DataFrame.
+# Result columns are fresh allocations from _resample_core, safe to mutate in-place.
+function _insert_gap_rows(result::TSFrame, gap_labels::AbstractVector)
+    gap_df = DataFrame(:Index => gap_labels)
+    for col in names(result.coredata, Not(:Index))
+        col_T = eltype(result.coredata[!, col])
+        promoted_T = col_T >: Missing ? col_T : Union{Missing, col_T}
+        if !(col_T >: Missing)
+            result.coredata[!, col] = convert(Vector{promoted_T}, result.coredata[!, col])
+        end
+        gap_df[!, col] = Vector{promoted_T}(missing, length(gap_labels))
+    end
+    combined = vcat(result.coredata, gap_df)
+    sort!(combined, :Index)
+    return combined
+end
+
+# Normalize fill_strategy: true (backward compat) → :missing.
+# Validate symbolic strategies; throw ArgumentError for unknown symbols.
+function _normalize_fill_strategy(fill_strategy::Union{Bool,Symbol,<:Real})
+    effective = fill_strategy === true ? :missing : fill_strategy
+    if effective isa Symbol && effective ∉ _VALID_FILL_SYMBOLS
+        throw(ArgumentError(
+            "Invalid fill_gaps strategy: :$effective. " *
+            "Valid symbols are: $(join(string.(':', collect(_VALID_FILL_SYMBOLS)), ", "))"
+        ))
+    end
+    return effective
+end
+
+# Apply fill strategy to gap rows only; pre-existing missing values are preserved.
+function _apply_fill_to_gaps!(combined::DataFrame, gap_labels::AbstractVector,
+                              effective::Union{Symbol,<:Real}, fill_limit::Union{Int,Nothing})
+    effective === :missing && return
+
+    gap_label_set = Set(gap_labels)
+    idx_vec = combined[!, :Index]
+    is_gap = [idx_vec[i] in gap_label_set for i in 1:size(combined, 1)]
+
+    for col in names(combined, Not(:Index))
+        v = combined[!, col]
+        if effective === :ffill
+            _apply_ffill_gaps!(v, is_gap, fill_limit)
+        elseif effective === :bfill
+            _apply_bfill_gaps!(v, is_gap, fill_limit)
+        elseif effective === :zero
+            _apply_constant_fill_gaps!(v, is_gap, zero(nonmissingtype(eltype(v))))
+        elseif effective isa Real
+            _apply_constant_fill_gaps!(v, is_gap, effective)
+        end
+    end
+
+    # :interpolate operates on the full DataFrame (needs Index column for time-weighting)
+    if effective === :interpolate
+        _apply_interpolate_gaps!(combined, is_gap)
+    end
+end
+
+# ── Main orchestrator ────────────────────────────────────────────────────
+# Insert missing rows for periods that have no data, then apply the fill strategy.
 function _fill_period_gaps(
     result::TSFrame,
     ts::TSFrame,
@@ -296,83 +379,12 @@ function _fill_period_gaps(
     idx = index(ts)
     isempty(idx) && return result
 
-    # First calendar-aligned period boundary (same floor/trunc logic as endpoints()).
-    first_boundary = period isa Week ? floor(first(idx), typeof(period)) : trunc(first(idx), typeof(period))
-
-    # Two-pointer sweep over calendar boundaries: detect periods with no source data.
-    gap_labels = eltype(idx)[]
-    j = 1
-    for lo in first_boundary:period:last(idx)
-        hi = lo + period
-        # Advance j past timestamps belonging to earlier periods.
-        while j <= length(idx) && idx[j] < lo
-            j += 1
-        end
-        if j > length(idx) || idx[j] >= hi
-            # Gap label for index_at=last: last moment of the period.
-            # Date index: subtract 1 day; DateTime index: subtract 1 millisecond.
-            # Other index types (e.g. sub-millisecond) are not supported by endpoints().
-            label = index_at === last ? (eltype(idx) == Date ? hi - Day(1) : hi - Millisecond(1)) : lo
-            push!(gap_labels, label)
-        end
-    end
-
+    gap_labels = _detect_gap_labels(idx, period, index_at)
     isempty(gap_labels) && return result
 
-    # Build gap rows and widen result columns to Union{Missing,T} in one pass.
-    # Result columns are fresh allocations from _resample_core, safe to mutate in-place.
-    gap_df = DataFrame(:Index => gap_labels)
-    for col in names(result.coredata, Not(:Index))
-        col_T = eltype(result.coredata[!, col])
-        promoted_T = col_T >: Missing ? col_T : Union{Missing, col_T}
-        if !(col_T >: Missing)
-            result.coredata[!, col] = convert(Vector{promoted_T}, result.coredata[!, col])
-        end
-        gap_df[!, col] = Vector{promoted_T}(missing, length(gap_labels))
-    end
-
-    combined = vcat(result.coredata, gap_df)
-    sort!(combined, :Index)
-
-    # ── Apply fill strategy to gap rows only ─────────────────────────────
-    # Normalize: true (backward compat) → :missing; false should never reach here.
-    effective = fill_strategy === true ? :missing : fill_strategy
-
-    # Validate symbolic fill strategy
-    if effective isa Symbol && effective ∉ _VALID_FILL_SYMBOLS
-        throw(ArgumentError(
-            "Invalid fill_gaps strategy: :$effective. " *
-            "Valid symbols are: $(join(string.(':', collect(_VALID_FILL_SYMBOLS)), ", "))"
-        ))
-    end
-
-    if effective !== :missing
-        # Build gap position mask
-        gap_label_set = Set(gap_labels)
-        n = size(combined, 1)
-        idx_vec = combined[!, :Index]
-        is_gap = [idx_vec[i] in gap_label_set for i in 1:n]
-
-        for col in names(combined, Not(:Index))
-            v = combined[!, col]
-            if effective === :ffill
-                _apply_ffill_gaps!(v, is_gap, fill_limit)
-            elseif effective === :bfill
-                _apply_bfill_gaps!(v, is_gap, fill_limit)
-            elseif effective === :zero
-                _apply_constant_fill_gaps!(v, is_gap, zero(nonmissingtype(eltype(v))))
-            elseif effective isa Real
-                _apply_constant_fill_gaps!(v, is_gap, effective)
-            elseif effective === :interpolate
-                # Wave 2: handled separately below
-            end
-        end
-
-        # Wave 2: :interpolate operates on the full DataFrame (needs Index column)
-        if effective === :interpolate
-            _apply_interpolate_gaps!(combined, is_gap)
-        end
-    end
+    combined = _insert_gap_rows(result, gap_labels)
+    effective = _normalize_fill_strategy(fill_strategy)
+    _apply_fill_to_gaps!(combined, gap_labels, effective, fill_limit)
 
     TSFrame(combined, :Index; issorted=true, copycols=false)
 end
