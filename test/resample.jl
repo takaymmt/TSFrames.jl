@@ -1,7 +1,7 @@
 # test/resample.jl
 # Tests for resample() — period-based resampling with per-column aggregation
 
-using Dates, DataFrames, Statistics, Test, TSFrames
+using Dates, DataFrames, Random, Statistics, Test, TSFrames
 
 # -- Test data setup -----------------------------------------------------------
 
@@ -487,4 +487,621 @@ end
     gap_idx_last = findfirst(==(expected_gap_label), index(r_fill_last))
     @test ismissing(r_fill_last.coredata[gap_idx_last, :Open])
     @test ismissing(r_fill_last.coredata[gap_idx_last, :Volume])
+end
+
+# -- 19. fill_gaps=:ffill basic ---------------------------------------------------
+
+@testset "fill_gaps=:ffill basic" begin
+    # ── Monthly gap: Jan + Mar present, Feb missing ──────────────────────
+    dates_fg = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),   # January
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))     # March
+    )
+    nfg = length(dates_fg)
+    ts_fg = TSFrame(DataFrame(
+        Open   = Float64.(1:nfg),
+        High   = Float64.(1:nfg) .+ 1,
+        Low    = Float64.(1:nfg) .- 1,
+        Close  = Float64.(1:nfg),
+        Volume = Int.(1:nfg) .* 100
+    ), dates_fg)
+
+    r = resample(ts_fg, Month(1); fill_gaps=:ffill)
+    @test DataFrames.nrow(r.coredata) == 4  # Jan, Feb(gap filled), Mar-boundary, Mar
+
+    # Feb is the gap row — should be forward-filled from Jan's aggregated values
+    feb_idx = findfirst(==(Date(2020,2,1)), index(r))
+    @test feb_idx !== nothing
+
+    # Jan group: rows 1-31 of January data
+    jan_idx = findfirst(==(Date(2020,1,1)), index(r))
+    jan_open = r.coredata[jan_idx, :Open]
+    jan_high = r.coredata[jan_idx, :High]
+    jan_low  = r.coredata[jan_idx, :Low]
+    jan_close = r.coredata[jan_idx, :Close]
+    jan_volume = r.coredata[jan_idx, :Volume]
+
+    # Feb gap row should be filled with Jan's values (ffill)
+    @test r.coredata[feb_idx, :Open]   == jan_open
+    @test r.coredata[feb_idx, :High]   == jan_high
+    @test r.coredata[feb_idx, :Low]    == jan_low
+    @test r.coredata[feb_idx, :Close]  == jan_close
+    @test r.coredata[feb_idx, :Volume] == jan_volume
+
+    # Non-gap rows still have real data (not missing)
+    @test !ismissing(r.coredata[jan_idx, :Open])
+
+    # ── Pre-existing missing in non-gap row is preserved ─────────────────
+    dates_pre = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    npre = length(dates_pre)
+    # Put a missing in row 1 of January
+    open_vals = Union{Float64,Missing}[i == 1 ? missing : Float64(i) for i in 1:npre]
+    ts_pre = TSFrame(DataFrame(
+        Open   = open_vals,
+        High   = Float64.(1:npre) .+ 1,
+        Low    = Float64.(1:npre) .- 1,
+        Close  = Float64.(1:npre),
+        Volume = Int.(1:npre) .* 100
+    ), dates_pre)
+
+    # Use skipmissing-safe agg: first still returns missing if first element is missing
+    r_pre = resample(ts_pre, Month(1), :Open => first; fill_gaps=:ffill)
+    # Jan's Open via first should be missing (first element of January is missing)
+    jan_idx_pre = findfirst(==(Date(2020,1,1)), index(r_pre))
+    @test ismissing(r_pre.coredata[jan_idx_pre, :Open])
+
+    # ── Works with custom Symbol pairs ───────────────────────────────────
+    r_custom = resample(ts_fg, Month(1), :Open => first, :Volume => sum; fill_gaps=:ffill)
+    @test DataFrames.nrow(r_custom.coredata) == 4
+    feb_idx_c = findfirst(==(Date(2020,2,1)), index(r_custom))
+    jan_idx_c = findfirst(==(Date(2020,1,1)), index(r_custom))
+    @test r_custom.coredata[feb_idx_c, :Open]   == r_custom.coredata[jan_idx_c, :Open]
+    @test r_custom.coredata[feb_idx_c, :Volume]  == r_custom.coredata[jan_idx_c, :Volume]
+
+    # ── Works with String pairs ──────────────────────────────────────────
+    r_str = resample(ts_fg, Month(1), "Open" => first; fill_gaps=:ffill)
+    @test DataFrames.nrow(r_str.coredata) == 4
+    feb_idx_s = findfirst(==(Date(2020,2,1)), index(r_str))
+    jan_idx_s = findfirst(==(Date(2020,1,1)), index(r_str))
+    @test r_str.coredata[feb_idx_s, :Open] == r_str.coredata[jan_idx_s, :Open]
+end
+
+# -- 20. fill_gaps=:bfill basic ---------------------------------------------------
+
+@testset "fill_gaps=:bfill basic" begin
+    # ── Monthly gap: Jan + Mar present, Feb missing ──────────────────────
+    dates_bf = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),   # January
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))     # March
+    )
+    nbf = length(dates_bf)
+    ts_bf = TSFrame(DataFrame(
+        Open   = Float64.(1:nbf),
+        High   = Float64.(1:nbf) .+ 1,
+        Low    = Float64.(1:nbf) .- 1,
+        Close  = Float64.(1:nbf),
+        Volume = Int.(1:nbf) .* 100
+    ), dates_bf)
+
+    r = resample(ts_bf, Month(1); fill_gaps=:bfill)
+    @test DataFrames.nrow(r.coredata) == 4
+
+    feb_idx = findfirst(==(Date(2020,2,1)), index(r))
+    @test feb_idx !== nothing
+
+    # The row after Feb gap is the Mar-boundary row (Mar 1 data assigned to Feb boundary).
+    # bfill should fill Feb from the next non-missing row.
+    next_idx = feb_idx + 1
+    @test r.coredata[feb_idx, :Open]   == r.coredata[next_idx, :Open]
+    @test r.coredata[feb_idx, :High]   == r.coredata[next_idx, :High]
+    @test r.coredata[feb_idx, :Low]    == r.coredata[next_idx, :Low]
+    @test r.coredata[feb_idx, :Close]  == r.coredata[next_idx, :Close]
+    @test r.coredata[feb_idx, :Volume] == r.coredata[next_idx, :Volume]
+
+    # ── Edge: first period is a gap → bfill fills from next period ───────
+    # Data only in March (no January or February data)
+    dates_late = collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    ts_late = TSFrame(DataFrame(
+        Open   = Float64.(1:31),
+        High   = Float64.(1:31) .+ 1,
+        Low    = Float64.(1:31) .- 1,
+        Close  = Float64.(1:31),
+        Volume = Int.(1:31) .* 100
+    ), dates_late)
+
+    # With Month(1) there's only 1 period (March). No gap possible within a single period.
+    # Use Week(1) instead — create weekly data with a gap at the start.
+    dates_wk_late = vcat(
+        collect(Date(2020,1,20):Day(1):Date(2020,1,26))   # week 3 only (Mon-Sun)
+    )
+    nwl = length(dates_wk_late)
+    # First period boundary is Jan 20 (Monday). No gap before that.
+    # Instead, let's use data that starts mid-month to create a leading gap.
+    dates_lead_gap = vcat(
+        collect(Date(2020,1,15):Day(1):Date(2020,1,31)),   # mid-Jan to end-Jan
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))     # March
+    )
+    nlg = length(dates_lead_gap)
+    ts_lead = TSFrame(DataFrame(
+        Open   = Float64.(1:nlg),
+        High   = Float64.(1:nlg) .+ 1,
+        Low    = Float64.(1:nlg) .- 1,
+        Close  = Float64.(1:nlg),
+        Volume = Int.(1:nlg) .* 100
+    ), dates_lead_gap)
+
+    # Monthly resample: Jan is present, Feb is gap, Mar is present
+    r_lead = resample(ts_lead, Month(1); fill_gaps=:bfill)
+    feb_idx_l = findfirst(==(Date(2020,2,1)), index(r_lead))
+    @test feb_idx_l !== nothing
+    # bfill: Feb filled from next non-missing row
+    next_idx_l = feb_idx_l + 1
+    @test r_lead.coredata[feb_idx_l, :Open] == r_lead.coredata[next_idx_l, :Open]
+end
+
+# -- 21. fill_gaps=:zero -----------------------------------------------------------
+
+@testset "fill_gaps=:zero" begin
+    # ── Monthly gap: Jan + Mar present, Feb missing ──────────────────────
+    dates_z = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    nz = length(dates_z)
+    ts_z = TSFrame(DataFrame(
+        Open   = Float64.(1:nz),
+        High   = Float64.(1:nz) .+ 1,
+        Low    = Float64.(1:nz) .- 1,
+        Close  = Float64.(1:nz),
+        Volume = Int.(1:nz) .* 100
+    ), dates_z)
+
+    r = resample(ts_z, Month(1); fill_gaps=:zero)
+    @test DataFrames.nrow(r.coredata) == 4
+
+    feb_idx = findfirst(==(Date(2020,2,1)), index(r))
+    @test feb_idx !== nothing
+
+    # Gap rows filled with typed zero
+    @test r.coredata[feb_idx, :Open]   == 0.0    # Float64 zero
+    @test r.coredata[feb_idx, :High]   == 0.0
+    @test r.coredata[feb_idx, :Low]    == 0.0
+    @test r.coredata[feb_idx, :Close]  == 0.0
+    @test r.coredata[feb_idx, :Volume] == 0       # Int zero
+
+    # Verify type: column is Union{T, Missing} but gap rows have zero, not missing
+    @test !ismissing(r.coredata[feb_idx, :Open])
+    @test !ismissing(r.coredata[feb_idx, :Volume])
+
+    # Non-gap rows retain their real values
+    jan_idx = findfirst(==(Date(2020,1,1)), index(r))
+    @test r.coredata[jan_idx, :Open] > 0
+end
+
+# -- 22. fill_gaps=<Real> constant --------------------------------------------------
+
+@testset "fill_gaps=Real constant" begin
+    dates_rc = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    nrc = length(dates_rc)
+    ts_rc = TSFrame(DataFrame(
+        Open   = Float64.(1:nrc),
+        High   = Float64.(1:nrc) .+ 1,
+        Low    = Float64.(1:nrc) .- 1,
+        Close  = Float64.(1:nrc),
+        Volume = Int.(1:nrc) .* 100
+    ), dates_rc)
+
+    # fill_gaps=99.0
+    r99 = resample(ts_rc, Month(1); fill_gaps=99.0)
+    @test DataFrames.nrow(r99.coredata) == 4
+    feb_idx_99 = findfirst(==(Date(2020,2,1)), index(r99))
+    @test r99.coredata[feb_idx_99, :Open]   == 99.0
+    @test r99.coredata[feb_idx_99, :High]   == 99.0
+    @test r99.coredata[feb_idx_99, :Close]  == 99.0
+    @test r99.coredata[feb_idx_99, :Volume] == 99.0  # Real constant applied to all cols
+
+    # fill_gaps=-1
+    r_neg = resample(ts_rc, Month(1); fill_gaps=-1)
+    feb_idx_neg = findfirst(==(Date(2020,2,1)), index(r_neg))
+    @test r_neg.coredata[feb_idx_neg, :Open]   == -1
+    @test r_neg.coredata[feb_idx_neg, :Volume]  == -1
+
+    # Non-gap rows are unaffected
+    jan_idx_99 = findfirst(==(Date(2020,1,1)), index(r99))
+    @test r99.coredata[jan_idx_99, :Open] != 99.0
+end
+
+# -- 23. fill_gaps backward compatibility (true/false) ------------------------------
+
+@testset "fill_gaps backward compat" begin
+    dates_bc = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    nbc = length(dates_bc)
+    ts_bc = TSFrame(DataFrame(
+        Open   = Float64.(1:nbc),
+        High   = Float64.(1:nbc) .+ 1,
+        Low    = Float64.(1:nbc) .- 1,
+        Close  = Float64.(1:nbc),
+        Volume = Int.(1:nbc) .* 100
+    ), dates_bc)
+
+    # fill_gaps=true should behave like :missing (gap rows stay missing)
+    r_true = resample(ts_bc, Month(1); fill_gaps=true)
+    @test DataFrames.nrow(r_true.coredata) == 4
+    feb_idx_t = findfirst(==(Date(2020,2,1)), index(r_true))
+    @test ismissing(r_true.coredata[feb_idx_t, :Open])
+    @test ismissing(r_true.coredata[feb_idx_t, :Volume])
+
+    # fill_gaps=:missing explicitly → same as true
+    r_missing = resample(ts_bc, Month(1); fill_gaps=:missing)
+    @test DataFrames.nrow(r_missing.coredata) == 4
+    feb_idx_m = findfirst(==(Date(2020,2,1)), index(r_missing))
+    @test ismissing(r_missing.coredata[feb_idx_m, :Open])
+
+    # fill_gaps=false → no gap rows inserted at all
+    r_false = resample(ts_bc, Month(1); fill_gaps=false)
+    @test DataFrames.nrow(r_false.coredata) == 3  # no Feb gap row
+    @test !(Date(2020,2,1) in index(r_false))
+end
+
+# -- 24. fill_limit with :ffill ----------------------------------------------------
+
+@testset "fill_limit with :ffill" begin
+    # 3 consecutive weekly gaps: weeks 2, 3, 4 missing
+    # Week 1: Jan 6-12 (Mon-Sun), Week 5: Feb 3-9 (Mon-Sun)
+    # Weeks 2 (Jan 13), 3 (Jan 20), 4 (Jan 27) are gaps
+    dates_3g = vcat(
+        collect(Date(2020,1,6):Day(1):Date(2020,1,12)),   # week 1
+        collect(Date(2020,2,3):Day(1):Date(2020,2,9))     # week 5
+    )
+    n3g = length(dates_3g)
+    ts_3g = TSFrame(DataFrame(
+        Open   = Float64.(1:n3g),
+        High   = Float64.(1:n3g) .+ 1,
+        Low    = Float64.(1:n3g) .- 1,
+        Close  = Float64.(1:n3g),
+        Volume = Int.(1:n3g) .* 100
+    ), dates_3g)
+
+    # fill_limit=nothing → all 3 gap weeks filled
+    r_all = resample(ts_3g, Week(1); fill_gaps=:ffill, fill_limit=nothing)
+    # Expect: week1, gap_w2(filled), gap_w3(filled), gap_w4(filled), straddle/week5
+    gap_w2 = findfirst(==(Date(2020,1,13)), index(r_all))
+    gap_w3 = findfirst(==(Date(2020,1,20)), index(r_all))
+    gap_w4 = findfirst(==(Date(2020,1,27)), index(r_all))
+    @test gap_w2 !== nothing
+    @test gap_w3 !== nothing
+    @test gap_w4 !== nothing
+    @test !ismissing(r_all.coredata[gap_w2, :Open])
+    @test !ismissing(r_all.coredata[gap_w3, :Open])
+    @test !ismissing(r_all.coredata[gap_w4, :Open])
+
+    # fill_limit=1 → only first gap week filled
+    r_lim1 = resample(ts_3g, Week(1); fill_gaps=:ffill, fill_limit=1)
+    gap_w2_l1 = findfirst(==(Date(2020,1,13)), index(r_lim1))
+    gap_w3_l1 = findfirst(==(Date(2020,1,20)), index(r_lim1))
+    gap_w4_l1 = findfirst(==(Date(2020,1,27)), index(r_lim1))
+    @test !ismissing(r_lim1.coredata[gap_w2_l1, :Open])   # 1st gap → filled
+    @test ismissing(r_lim1.coredata[gap_w3_l1, :Open])    # 2nd gap → stays missing
+    @test ismissing(r_lim1.coredata[gap_w4_l1, :Open])    # 3rd gap → stays missing
+
+    # fill_limit=2 → first 2 gap weeks filled, 3rd stays missing
+    r_lim2 = resample(ts_3g, Week(1); fill_gaps=:ffill, fill_limit=2)
+    gap_w2_l2 = findfirst(==(Date(2020,1,13)), index(r_lim2))
+    gap_w3_l2 = findfirst(==(Date(2020,1,20)), index(r_lim2))
+    gap_w4_l2 = findfirst(==(Date(2020,1,27)), index(r_lim2))
+    @test !ismissing(r_lim2.coredata[gap_w2_l2, :Open])   # 1st gap → filled
+    @test !ismissing(r_lim2.coredata[gap_w3_l2, :Open])   # 2nd gap → filled
+    @test ismissing(r_lim2.coredata[gap_w4_l2, :Open])    # 3rd gap → stays missing
+
+    # Verify that filled values propagate (ffill chain)
+    week1_idx = findfirst(==(Date(2020,1,6)), index(r_all))
+    @test r_all.coredata[gap_w2, :Open] == r_all.coredata[week1_idx, :Open]
+    @test r_all.coredata[gap_w3, :Open] == r_all.coredata[week1_idx, :Open]
+    @test r_all.coredata[gap_w4, :Open] == r_all.coredata[week1_idx, :Open]
+end
+
+# -- 25. fill_limit with :bfill ----------------------------------------------------
+
+@testset "fill_limit with :bfill" begin
+    # Same 3 consecutive weekly gaps as testset 24
+    dates_3gb = vcat(
+        collect(Date(2020,1,6):Day(1):Date(2020,1,12)),   # week 1
+        collect(Date(2020,2,3):Day(1):Date(2020,2,9))     # week 5
+    )
+    n3gb = length(dates_3gb)
+    ts_3gb = TSFrame(DataFrame(
+        Open   = Float64.(1:n3gb),
+        High   = Float64.(1:n3gb) .+ 1,
+        Low    = Float64.(1:n3gb) .- 1,
+        Close  = Float64.(1:n3gb),
+        Volume = Int.(1:n3gb) .* 100
+    ), dates_3gb)
+
+    # fill_limit=nothing → all 3 gap weeks filled (backward from week 5)
+    r_all_b = resample(ts_3gb, Week(1); fill_gaps=:bfill, fill_limit=nothing)
+    gap_w2_b = findfirst(==(Date(2020,1,13)), index(r_all_b))
+    gap_w3_b = findfirst(==(Date(2020,1,20)), index(r_all_b))
+    gap_w4_b = findfirst(==(Date(2020,1,27)), index(r_all_b))
+    @test !ismissing(r_all_b.coredata[gap_w2_b, :Open])
+    @test !ismissing(r_all_b.coredata[gap_w3_b, :Open])
+    @test !ismissing(r_all_b.coredata[gap_w4_b, :Open])
+
+    # fill_limit=1 → only LAST gap week (closest to anchor) filled
+    # bfill iterates in reverse: fills w4 first, then w3, then w2
+    r_lim1_b = resample(ts_3gb, Week(1); fill_gaps=:bfill, fill_limit=1)
+    gap_w2_bl1 = findfirst(==(Date(2020,1,13)), index(r_lim1_b))
+    gap_w3_bl1 = findfirst(==(Date(2020,1,20)), index(r_lim1_b))
+    gap_w4_bl1 = findfirst(==(Date(2020,1,27)), index(r_lim1_b))
+    @test ismissing(r_lim1_b.coredata[gap_w2_bl1, :Open])   # 3rd from anchor → stays missing
+    @test ismissing(r_lim1_b.coredata[gap_w3_bl1, :Open])   # 2nd from anchor → stays missing
+    @test !ismissing(r_lim1_b.coredata[gap_w4_bl1, :Open])  # 1st from anchor → filled
+
+    # fill_limit=2 → last 2 gap weeks filled, first stays missing
+    r_lim2_b = resample(ts_3gb, Week(1); fill_gaps=:bfill, fill_limit=2)
+    gap_w2_bl2 = findfirst(==(Date(2020,1,13)), index(r_lim2_b))
+    gap_w3_bl2 = findfirst(==(Date(2020,1,20)), index(r_lim2_b))
+    gap_w4_bl2 = findfirst(==(Date(2020,1,27)), index(r_lim2_b))
+    @test ismissing(r_lim2_b.coredata[gap_w2_bl2, :Open])    # farthest → stays missing
+    @test !ismissing(r_lim2_b.coredata[gap_w3_bl2, :Open])   # 2nd from anchor → filled
+    @test !ismissing(r_lim2_b.coredata[gap_w4_bl2, :Open])   # 1st from anchor → filled
+
+    # Verify that bfill uses the week-5 anchor value
+    # The row right after the gap is the "straddle" row (Feb 3 assigned to Jan 27 boundary)
+    # or the week-5 row itself. Find the first non-gap row after the gaps.
+    last_row_idx = findfirst(>=(Date(2020,2,3)), index(r_all_b))
+    if last_row_idx !== nothing
+        # In bfill with no limit, all gap rows should have the same value as the anchor
+        @test r_all_b.coredata[gap_w4_b, :Open] == r_all_b.coredata[last_row_idx, :Open]
+    end
+end
+
+# -- 26. fill_gaps=:interpolate ----------------------------------------------------
+
+@testset "fill_gaps=:interpolate" begin
+    # ── Single gap: Jan + Mar, Feb missing → Feb interpolated ────────────
+    dates_ip = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    nip = length(dates_ip)
+    # Use constant values within each month for easy verification
+    vals = vcat(fill(10.0, 31), fill(30.0, 31))
+    ts_ip = TSFrame(DataFrame(
+        val = vals
+    ), dates_ip)
+
+    r = resample(ts_ip, Month(1), :val => first; fill_gaps=:interpolate)
+    # Should produce 4 rows: Jan, Feb(gap), Mar-boundary-straddle, Mar-rest
+    @test DataFrames.nrow(r.coredata) == 4
+
+    feb_idx = findfirst(==(Date(2020,2,1)), index(r))
+    @test feb_idx !== nothing
+    @test !ismissing(r.coredata[feb_idx, :val])
+
+    # Jan val=10.0, next non-missing row val=30.0
+    # Interpolation is time-weighted between Jan 1 and the Mar-boundary index
+    jan_idx = findfirst(==(Date(2020,1,1)), index(r))
+    jan_val = r.coredata[jan_idx, :val]
+    @test jan_val == 10.0
+
+    # Feb interpolated value should be between Jan and Mar values
+    feb_val = r.coredata[feb_idx, :val]
+    @test feb_val > 10.0
+    @test feb_val < 30.0
+
+    # ── Multiple consecutive gaps ────────────────────────────────────────
+    # Jan + April data, Feb + Mar are gaps
+    dates_multi = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),   # January
+        collect(Date(2020,4,1):Day(1):Date(2020,4,30))     # April
+    )
+    nmulti = length(dates_multi)
+    vals_multi = vcat(fill(1.0, 31), fill(4.0, 30))
+    ts_multi = TSFrame(DataFrame(val = vals_multi), dates_multi)
+
+    r_multi = resample(ts_multi, Month(1), :val => first; fill_gaps=:interpolate)
+    feb_idx_m = findfirst(==(Date(2020,2,1)), index(r_multi))
+    mar_idx_m = findfirst(==(Date(2020,3,1)), index(r_multi))
+    @test feb_idx_m !== nothing
+    @test mar_idx_m !== nothing
+    @test !ismissing(r_multi.coredata[feb_idx_m, :val])
+    @test !ismissing(r_multi.coredata[mar_idx_m, :val])
+
+    # Feb should be closer to 1.0, Mar closer to 4.0 (time-weighted)
+    feb_v = r_multi.coredata[feb_idx_m, :val]
+    mar_v = r_multi.coredata[mar_idx_m, :val]
+    @test feb_v > 1.0
+    @test mar_v > feb_v
+    @test mar_v < 4.0
+
+    # ── Non-numeric columns: stay missing ────────────────────────────────
+    dates_str = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    nstr = length(dates_str)
+    ts_str = TSFrame(DataFrame(
+        label = [string("row_", i) for i in 1:nstr]
+    ), dates_str)
+
+    r_str = resample(ts_str, Month(1), :label => first; fill_gaps=:interpolate)
+    feb_idx_str = findfirst(==(Date(2020,2,1)), index(r_str))
+    @test feb_idx_str !== nothing
+    @test ismissing(r_str.coredata[feb_idx_str, :label])  # non-numeric → stays missing
+
+    # ── Edge: gap at start of series → extrapolate from right ────────────
+    # Data only from March onward, with monthly period starting from March boundary
+    # Use weekly data for a cleaner leading gap scenario
+    dates_trail = vcat(
+        collect(Date(2020,1,20):Day(1):Date(2020,1,26)),   # week 3 (Mon-Sun)
+        collect(Date(2020,2,3):Day(1):Date(2020,2,9))      # week 5 (Mon-Sun)
+    )
+    nt = length(dates_trail)
+    ts_trail = TSFrame(DataFrame(val = Float64.(1:nt)), dates_trail)
+
+    r_trail = resample(ts_trail, Week(1), :val => first; fill_gaps=:interpolate)
+    # Gap at Jan 27 (week 4) is between week 3 and week 5
+    gap_w4 = findfirst(==(Date(2020,1,27)), index(r_trail))
+    if gap_w4 !== nothing
+        @test !ismissing(r_trail.coredata[gap_w4, :val])
+    end
+end
+
+# -- 27. fill_gaps pre-existing missing preservation --------------------------------
+
+@testset "fill_gaps pre-existing missing preservation" begin
+    # Create data where a non-gap row has pre-existing missing in a column
+    dates_pm = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    npm = length(dates_pm)
+
+    # Put missing in the first element of January (non-gap data)
+    vals_pm = Union{Float64,Missing}[i == 1 ? missing : Float64(i) for i in 1:npm]
+    ts_pm = TSFrame(DataFrame(val = vals_pm), dates_pm)
+
+    # ── :ffill: pre-existing missing in aggregated non-gap row stays missing ──
+    r_ff = resample(ts_pm, Month(1), :val => first; fill_gaps=:ffill)
+    jan_idx_ff = findfirst(==(Date(2020,1,1)), index(r_ff))
+    # first(vals for January) = missing (row 1 is missing)
+    @test ismissing(r_ff.coredata[jan_idx_ff, :val])
+
+    # Feb gap: ffill from Jan, but Jan is missing → Feb stays missing too
+    feb_idx_ff = findfirst(==(Date(2020,2,1)), index(r_ff))
+    @test ismissing(r_ff.coredata[feb_idx_ff, :val])
+
+    # ── :bfill: pre-existing missing in non-gap row stays missing ────────
+    r_bf = resample(ts_pm, Month(1), :val => first; fill_gaps=:bfill)
+    jan_idx_bf = findfirst(==(Date(2020,1,1)), index(r_bf))
+    # Jan's aggregated value is missing (pre-existing) — should NOT be overwritten by bfill
+    @test ismissing(r_bf.coredata[jan_idx_bf, :val])
+
+    # Feb gap: bfill from Mar-boundary row (should be filled)
+    feb_idx_bf = findfirst(==(Date(2020,2,1)), index(r_bf))
+    next_non_gap = feb_idx_bf + 1
+    @test r_bf.coredata[feb_idx_bf, :val] == r_bf.coredata[next_non_gap, :val]
+
+    # ── :zero: pre-existing missing in non-gap row stays missing ─────────
+    r_z = resample(ts_pm, Month(1), :val => first; fill_gaps=:zero)
+    jan_idx_z = findfirst(==(Date(2020,1,1)), index(r_z))
+    @test ismissing(r_z.coredata[jan_idx_z, :val])  # pre-existing missing preserved
+    feb_idx_z = findfirst(==(Date(2020,2,1)), index(r_z))
+    @test r_z.coredata[feb_idx_z, :val] == 0.0  # gap row filled with zero
+end
+
+# -- 28. fill_gaps with DateTime index ---------------------------------------------
+
+@testset "fill_gaps with DateTime index" begin
+    # Hourly data: Jan 1-3 and Jan 5-7 (Jan 4 is a gap day)
+    dts_fg = vcat(
+        collect(DateTime(2020,1,1,0,0,0):Hour(1):DateTime(2020,1,3,23,0,0)),
+        collect(DateTime(2020,1,5,0,0,0):Hour(1):DateTime(2020,1,7,23,0,0))
+    )
+    ndf = length(dts_fg)
+    ts_dt = TSFrame(DataFrame(
+        Open   = Float64.(1:ndf),
+        High   = Float64.(1:ndf) .+ 1,
+        Low    = Float64.(1:ndf) .- 1,
+        Close  = Float64.(1:ndf),
+        Volume = Int.(1:ndf) .* 100
+    ), dts_fg)
+
+    # ── :ffill with DateTime → gap day filled with previous day's values ──
+    r_ff_dt = resample(ts_dt, Day(1); fill_gaps=:ffill)
+    gap_dt = DateTime(2020,1,4,0,0,0)
+    gap_idx_dt = findfirst(==(gap_dt), index(r_ff_dt))
+    @test gap_idx_dt !== nothing
+    @test !ismissing(r_ff_dt.coredata[gap_idx_dt, :Open])
+    @test !ismissing(r_ff_dt.coredata[gap_idx_dt, :Volume])
+
+    # Verify it was filled from the preceding day (Jan 3)
+    prev_idx = gap_idx_dt - 1
+    @test r_ff_dt.coredata[gap_idx_dt, :Open]   == r_ff_dt.coredata[prev_idx, :Open]
+    @test r_ff_dt.coredata[gap_idx_dt, :Volume]  == r_ff_dt.coredata[prev_idx, :Volume]
+
+    # ── :interpolate with DateTime → time-weighted interpolation ─────────
+    r_ip_dt = resample(ts_dt, Day(1); fill_gaps=:interpolate)
+    gap_idx_ip = findfirst(==(gap_dt), index(r_ip_dt))
+    @test gap_idx_ip !== nothing
+    @test !ismissing(r_ip_dt.coredata[gap_idx_ip, :Open])
+
+    # Gap Open should be between Jan 3's and Jan 5's Open values
+    prev_open = r_ip_dt.coredata[gap_idx_ip - 1, :Open]
+    next_open = r_ip_dt.coredata[gap_idx_ip + 1, :Open]
+    gap_open  = r_ip_dt.coredata[gap_idx_ip, :Open]
+    @test gap_open > prev_open || gap_open ≈ prev_open  # at least as large as prev
+    @test gap_open < next_open || gap_open ≈ next_open  # at most as large as next
+
+    # Index type preserved
+    @test eltype(index(r_ff_dt)) == DateTime
+    @test eltype(index(r_ip_dt)) == DateTime
+end
+
+# -- 29. fill_gaps with index_at=last ----------------------------------------------
+
+@testset "fill_gaps with index_at=last" begin
+    dates_il = vcat(
+        collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+        collect(Date(2020,3,1):Day(1):Date(2020,3,31))
+    )
+    nil = length(dates_il)
+    ts_il = TSFrame(DataFrame(
+        Open   = Float64.(1:nil),
+        High   = Float64.(1:nil) .+ 1,
+        Low    = Float64.(1:nil) .- 1,
+        Close  = Float64.(1:nil),
+        Volume = Int.(1:nil) .* 100
+    ), dates_il)
+
+    # ── :ffill with index_at=last → gap rows get end-of-period labels ────
+    r_last = resample(ts_il, Month(1); fill_gaps=:ffill, index_at=last)
+    @test DataFrames.nrow(r_last.coredata) == 4
+
+    # Feb gap row should have end-of-Feb label (Feb 29, 2020 is a leap year)
+    @test Date(2020,2,29) in index(r_last)
+    feb_idx_last = findfirst(==(Date(2020,2,29)), index(r_last))
+    @test feb_idx_last !== nothing
+
+    # Feb gap row should be filled (ffill from Jan)
+    @test !ismissing(r_last.coredata[feb_idx_last, :Open])
+    @test !ismissing(r_last.coredata[feb_idx_last, :Volume])
+
+    # Jan's index_at=last label should be Jan 31
+    @test Date(2020,1,31) in index(r_last)
+    jan_idx_last = findfirst(==(Date(2020,1,31)), index(r_last))
+    @test r_last.coredata[feb_idx_last, :Open] == r_last.coredata[jan_idx_last, :Open]
+
+    # ── :bfill with index_at=last ────────────────────────────────────────
+    r_last_bf = resample(ts_il, Month(1); fill_gaps=:bfill, index_at=last)
+    feb_idx_lbf = findfirst(==(Date(2020,2,29)), index(r_last_bf))
+    @test !ismissing(r_last_bf.coredata[feb_idx_lbf, :Open])
+    # bfill: Feb filled from the next non-missing row
+    next_row = feb_idx_lbf + 1
+    @test r_last_bf.coredata[feb_idx_lbf, :Open] == r_last_bf.coredata[next_row, :Open]
+
+    # ── :zero with index_at=last ─────────────────────────────────────────
+    r_last_z = resample(ts_il, Month(1); fill_gaps=:zero, index_at=last)
+    feb_idx_lz = findfirst(==(Date(2020,2,29)), index(r_last_z))
+    @test r_last_z.coredata[feb_idx_lz, :Open] == 0.0
+    @test r_last_z.coredata[feb_idx_lz, :Volume] == 0
+
+    # ── :interpolate with index_at=last ──────────────────────────────────
+    # NOTE: Use explicit Float pairs to avoid InexactError on Int columns (Volume).
+    # The implementation's _apply_interpolate_gaps! produces Float results for all
+    # numeric columns; Int columns trigger InexactError — this is a known limitation
+    # (implementation bug) that should be fixed in src/resample.jl.
+    r_last_ip = resample(ts_il, Month(1), :Open => first, :Close => last;
+                         fill_gaps=:interpolate, index_at=last)
+    feb_idx_lip = findfirst(==(Date(2020,2,29)), index(r_last_ip))
+    @test !ismissing(r_last_ip.coredata[feb_idx_lip, :Open])
 end

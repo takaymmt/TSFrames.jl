@@ -26,6 +26,18 @@ columns and applies the canonical financial aggregation rules:
 Columns that are not present are silently skipped. At least one must exist.
 
 ## Keyword arguments
+- `fill_gaps`: strategy for filling periods with no source data (default: `false`).
+  - `false`      — no gap filling (default).
+  - `true`       — backward compatible, same as `:missing`.
+  - `:missing`   — insert gap rows filled with `missing`.
+  - `:ffill`     — forward fill gap rows from the preceding non-missing value.
+  - `:bfill`     — backward fill gap rows from the following non-missing value.
+  - `:zero`      — fill gap rows with zero (typed via `zero(nonmissingtype(eltype(col)))`).
+  - `<Real>`     — fill gap rows with that numeric constant (e.g. `fill_gaps=0.0`).
+  - `:interpolate` — linear interpolation between surrounding non-missing values (numeric columns only).
+  **Note**: only *newly inserted* gap rows are affected; pre-existing `missing` values are preserved.
+- `fill_limit`: maximum number of consecutive gap rows to fill for `:ffill`/`:bfill`
+  (default: `nothing` = no limit). Ignored for other strategies.
 - `index_at`: function to select the period label from the index values (`first` or `last`)
 - `renamecols`: if `false` (default), output columns keep the original names;
   if `true`, DataFrames auto-generates names like `Open_first`.
@@ -119,9 +131,10 @@ end
 function resample(
     ts::TSFrame,
     period::T;
-    fill_gaps::Bool    = false,
-    index_at::Function = first,
-    renamecols::Bool   = false,
+    fill_gaps::Union{Bool,Symbol,<:Real} = false,
+    fill_limit::Union{Int,Nothing}       = nothing,
+    index_at::Function                    = first,
+    renamecols::Bool                      = false,
 ) where {T<:Dates.Period}
     any(hasproperty(ts.coredata, col) for (col, _) in _OHLCV_DEFAULT_AGG) ||
         throw(ArgumentError(
@@ -129,7 +142,7 @@ function resample(
             "Use resample(ts, period, :col => fn, ...) to specify columns explicitly."
         ))
     result = _resample_core(ts, period, _OHLCV_DEFAULT_AGG, index_at, renamecols)
-    fill_gaps ? _fill_period_gaps(result, ts, period, index_at) : result
+    fill_gaps !== false ? _fill_period_gaps(result, ts, period, index_at, fill_gaps, fill_limit) : result
 end
 
 # 2. Explicit Symbol => Function pairs
@@ -137,16 +150,17 @@ function resample(
     ts::TSFrame,
     period::T,
     col_agg_pairs::Pair{Symbol,<:Function}...;
-    fill_gaps::Bool    = false,
-    index_at::Function = first,
-    renamecols::Bool   = false,
+    fill_gaps::Union{Bool,Symbol,<:Real} = false,
+    fill_limit::Union{Int,Nothing}       = nothing,
+    index_at::Function                    = first,
+    renamecols::Bool                      = false,
 ) where {T<:Dates.Period}
     for (col, _) in col_agg_pairs
         hasproperty(ts.coredata, col) ||
             throw(ArgumentError("Column :$col not found in TSFrame"))
     end
     result = _resample_core(ts, period, col_agg_pairs, index_at, renamecols)
-    fill_gaps ? _fill_period_gaps(result, ts, period, index_at) : result
+    fill_gaps !== false ? _fill_period_gaps(result, ts, period, index_at, fill_gaps, fill_limit) : result
 end
 
 # 3. String => Function pairs (convenience overload)
@@ -154,12 +168,100 @@ function resample(
     ts::TSFrame,
     period::T,
     col_agg_pairs::Pair{String,<:Function}...;
-    fill_gaps::Bool    = false,
-    index_at::Function = first,
-    renamecols::Bool   = false,
+    fill_gaps::Union{Bool,Symbol,<:Real} = false,
+    fill_limit::Union{Int,Nothing}       = nothing,
+    index_at::Function                    = first,
+    renamecols::Bool                      = false,
 ) where {T<:Dates.Period}
     sym_pairs = Tuple(Symbol(col) => fn for (col, fn) in col_agg_pairs)
-    resample(ts, period, sym_pairs...; fill_gaps=fill_gaps, index_at=index_at, renamecols=renamecols)
+    resample(ts, period, sym_pairs...; fill_gaps=fill_gaps, fill_limit=fill_limit, index_at=index_at, renamecols=renamecols)
+end
+
+# ── Gap-fill helper functions ─────────────────────────────────────────────
+# These operate only on positions marked as gap rows (is_gap[i] == true),
+# preserving pre-existing missing values in non-gap rows.
+
+# Forward fill: for each gap row, copy from the preceding non-missing value.
+function _apply_ffill_gaps!(v::AbstractVector, is_gap::AbstractVector{Bool}, limit::Union{Int,Nothing})
+    consec = 0
+    for i in 2:length(v)
+        if is_gap[i] && ismissing(v[i])
+            if !ismissing(v[i-1])
+                if limit === nothing || consec < limit
+                    v[i] = v[i-1]
+                    consec += 1
+                end
+            end
+        elseif !is_gap[i]
+            consec = 0  # reset on real (non-gap) data points
+        end
+    end
+end
+
+# Backward fill: iterate in reverse, copy from the following non-missing value.
+function _apply_bfill_gaps!(v::AbstractVector, is_gap::AbstractVector{Bool}, limit::Union{Int,Nothing})
+    consec = 0
+    for i in (length(v)-1):-1:1
+        if is_gap[i] && ismissing(v[i])
+            if !ismissing(v[i+1])
+                if limit === nothing || consec < limit
+                    v[i] = v[i+1]
+                    consec += 1
+                end
+            end
+        elseif !is_gap[i]
+            consec = 0
+        end
+    end
+end
+
+# Constant fill: replace missing gap rows with a fixed value.
+function _apply_constant_fill_gaps!(v::AbstractVector, is_gap::AbstractVector{Bool}, fill_val)
+    for i in eachindex(v)
+        if is_gap[i] && ismissing(v[i])
+            v[i] = fill_val
+        end
+    end
+end
+
+# Linear interpolation for gap rows (numeric columns only).
+# Uses time-weighted interpolation between the nearest non-missing anchors.
+function _apply_interpolate_gaps!(combined::DataFrame, is_gap::AbstractVector{Bool})
+    n = size(combined, 1)
+    idx_col = combined[!, :Index]
+
+    for col in names(combined, Not(:Index))
+        v = combined[!, col]
+        T = nonmissingtype(eltype(v))
+        T <: AbstractFloat || continue  # skip non-float columns (Int interpolation → InexactError)
+
+        for i in 1:n
+            (is_gap[i] && ismissing(v[i])) || continue
+
+            # Find left anchor (nearest preceding non-missing value)
+            lo = i - 1
+            while lo >= 1 && ismissing(v[lo])
+                lo -= 1
+            end
+            # Find right anchor (nearest following non-missing value)
+            hi = i + 1
+            while hi <= n && ismissing(v[hi])
+                hi += 1
+            end
+
+            if lo >= 1 && hi <= n
+                t_lo = Dates.value(idx_col[lo])
+                t_hi = Dates.value(idx_col[hi])
+                t_i  = Dates.value(idx_col[i])
+                frac = (t_i - t_lo) / (t_hi - t_lo)
+                v[i] = v[lo] + frac * (v[hi] - v[lo])
+            elseif lo >= 1
+                v[i] = v[lo]  # extrapolate left if no right anchor
+            elseif hi <= n
+                v[i] = v[hi]  # extrapolate right if no left anchor
+            end
+        end
+    end
 end
 
 # Internal: insert missing rows for periods that have no data.
@@ -169,6 +271,8 @@ function _fill_period_gaps(
     ts::TSFrame,
     period::T,
     index_at::IA,
+    fill_strategy::Union{Bool,Symbol,<:Real} = true,
+    fill_limit::Union{Int,Nothing} = nothing,
 ) where {T<:Dates.Period, IA<:Function}
     idx = index(ts)
     isempty(idx) && return result
@@ -210,5 +314,37 @@ function _fill_period_gaps(
 
     combined = vcat(result.coredata, gap_df)
     sort!(combined, :Index)
+
+    # ── Apply fill strategy to gap rows only ─────────────────────────────
+    # Normalize: true (backward compat) → :missing; false should never reach here.
+    effective = fill_strategy === true ? :missing : fill_strategy
+
+    if effective !== :missing
+        # Build gap position mask
+        gap_label_set = Set(gap_labels)
+        n = size(combined, 1)
+        is_gap = [combined[i, :Index] in gap_label_set for i in 1:n]
+
+        for col in names(combined, Not(:Index))
+            v = combined[!, col]
+            if effective === :ffill
+                _apply_ffill_gaps!(v, is_gap, fill_limit)
+            elseif effective === :bfill
+                _apply_bfill_gaps!(v, is_gap, fill_limit)
+            elseif effective === :zero
+                _apply_constant_fill_gaps!(v, is_gap, zero(nonmissingtype(eltype(v))))
+            elseif effective isa Real
+                _apply_constant_fill_gaps!(v, is_gap, effective)
+            elseif effective === :interpolate
+                # Wave 2: handled separately below
+            end
+        end
+
+        # Wave 2: :interpolate operates on the full DataFrame (needs Index column)
+        if effective === :interpolate
+            _apply_interpolate_gaps!(combined, is_gap)
+        end
+    end
+
     TSFrame(combined, :Index; issorted=true, copycols=false)
 end
