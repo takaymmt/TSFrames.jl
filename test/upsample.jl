@@ -128,3 +128,59 @@ end
     @test_throws DomainError upsample(ts, Day(0))
     @test_throws DomainError upsample(ts, Day(-1))
 end
+
+# -- 9. Off-grid source rows preserved -----------------------------------------
+
+@testset "upsample off-grid source rows preserved" begin
+    # src: 00:00, 01:30, 03:00; period=1h
+    # grid: 00:00, 01:00, 02:00, 03:00
+    # 01:30 is not on the hourly grid — must appear as an extra row
+    off_dates = [DateTime(2020,1,1,0), DateTime(2020,1,1,1,30), DateTime(2020,1,1,3)]
+    off_ts = TSFrame([10.0, 20.0, 30.0], off_dates)
+    result = upsample(off_ts, Hour(1))
+
+    # merged: 00:00(src), 01:00(grid), 01:30(src), 02:00(grid), 03:00(src+grid)
+    expected_index = [DateTime(2020,1,1,0,0), DateTime(2020,1,1,1,0),
+                      DateTime(2020,1,1,1,30), DateTime(2020,1,1,2,0), DateTime(2020,1,1,3,0)]
+    @test length(result) == 5
+    @test index(result) == expected_index
+    @test result[1, :x1] == 10.0      # 00:00 src value
+    @test ismissing(result[2, :x1])   # 01:00 grid-only => missing
+    @test result[3, :x1] == 20.0      # 01:30 off-grid src value preserved
+    @test ismissing(result[4, :x1])   # 02:00 grid-only => missing
+    @test result[5, :x1] == 30.0      # 03:00 src+grid value
+end
+
+# -- 10. last(src_idx) off-grid ------------------------------------------------
+
+@testset "upsample last src timestamp off-grid" begin
+    # period=7h, range=48h (Jan 1 to Jan 3)
+    # grid: 0h, 7h, 14h, 21h, 28h, 35h, 42h (last = Jan 2 18:00)
+    # last(src_idx) = Jan 3 00:00 (48h) does NOT land on the 7h grid
+    src_ts = TSFrame([1.0, 2.0], [DateTime(2020,1,1), DateTime(2020,1,3)])
+    result = upsample(src_ts, Hour(7))
+
+    @test last(index(result)) == DateTime(2020, 1, 3)  # off-grid tail preserved
+    @test last(result[:, :x1]) == 2.0
+    @test first(index(result)) == DateTime(2020, 1, 1)
+    @test first(result[:, :x1]) == 1.0
+end
+
+# -- 11. Deduplication of grid-coincident rows + off-grid coexistence ----------
+
+@testset "upsample deduplication and off-grid coexistence" begin
+    # src: 00:00, 06:00, 12:00; period=4h
+    # grid: 0h, 4h, 8h, 12h — 0h and 12h coincide with src, 6h is off-grid
+    ts = TSFrame([1.0, 2.0, 3.0],
+                 [DateTime(2020,1,1,0), DateTime(2020,1,1,6), DateTime(2020,1,1,12)])
+    result = upsample(ts, Hour(4))
+
+    # merged: 0h(src), 4h(grid), 6h(src-off-grid), 8h(grid), 12h(src+grid) => 5 rows
+    @test length(result) == 5
+    @test allunique(index(result))     # no duplicate timestamps
+    @test result[1, :x1] == 1.0       # 0h  src value
+    @test ismissing(result[2, :x1])   # 4h  grid-only => missing
+    @test result[3, :x1] == 2.0       # 6h  off-grid src value preserved
+    @test ismissing(result[4, :x1])   # 8h  grid-only => missing
+    @test result[5, :x1] == 3.0       # 12h src+grid, no duplicate
+end

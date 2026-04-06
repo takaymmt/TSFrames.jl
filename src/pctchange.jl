@@ -99,9 +99,7 @@ julia> pctchange(ts, 3)
 
 ```
 """
-
-# Pctchange
-function pctchange(ts::TSFrame, periods::Int = 1)
+function pctchange(ts::TSFrame, periods::Int=1)
     if periods <= 0
         throw(ArgumentError("periods must be a positive int"))
     end
