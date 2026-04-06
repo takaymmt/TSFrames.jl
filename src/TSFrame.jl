@@ -361,10 +361,10 @@ struct TSFrame
     function TSFrame(coredata::DataFrame, index::AbstractVector{T}; issorted = false, copycols = true) where {T<:Union{Integer, TimeType}}
         if issorted
             sorted_index = copycols ? copy(index) : index
-            cd = copy(coredata)
+            cd = copycols ? copy(coredata) : coredata
         elseif Base.issorted(index)
             sorted_index = copycols ? copy(index) : index
-            cd = copy(coredata)
+            cd = copycols ? copy(coredata) : coredata
         else
             perm = sortperm(index)
             sorted_index = index[perm]
@@ -401,7 +401,7 @@ end
 # From DataFrame, index range
 function TSFrame(coredata::DataFrame, index::UnitRange{Int}; issorted = false, copycols = true)
     index_vals = collect(index)
-    cd = copy(coredata)
+    cd = copycols ? copy(coredata) : coredata
     insertcols!(cd, 1, :Index => index_vals, after=false, copycols=copycols)
     TSFrame(cd, :Index; issorted = issorted, copycols = copycols)
 end

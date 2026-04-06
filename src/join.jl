@@ -1,4 +1,4 @@
-joinmap = Dict(
+const joinmap = Dict(
     :JoinInner=>DataFrames.innerjoin,
     :JoinBoth=>DataFrames.innerjoin,
     :JoinOuter=>DataFrames.outerjoin,

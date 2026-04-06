@@ -142,6 +142,110 @@ apply(ts, Week(1), Statistics.std, last) # same as above but index contains the 
 apply(ts, Week(1), Statistics.std, last, renamecols=false) # do not rename column
 ```
 
+## Frequency conversion with `to_period`
+
+For simple frequency reduction that picks one row per period (the last one
+within each period), TSFrames provides the `to_period` family of helpers.
+Unlike `apply`/`resample`, these methods do **not** aggregate values — they
+just select the period boundary rows from the underlying data.
+
+```@repl e1
+to_monthly(ts)        # one row per month (last observation in each month)
+to_weekly(ts, 2)      # one row every 2 weeks
+to_period(ts, Quarter(1)) # equivalent generic form for Quarter periods
+```
+
+Convenience aliases include `to_yearly`, `to_quarterly`, `to_monthly`,
+`to_weekly`, `to_daily`, `to_hourly`, `to_minutes`, and `to_seconds`.
+
+## Resampling with `resample`
+
+`resample` converts a `TSFrame` to a lower frequency by applying per-column
+aggregation functions over each calendar period. Unlike `apply` (which takes
+a single function), `resample` lets you specify a different aggregation rule
+for each column using `column => function` pairs (both `Symbol` and `String`
+keys are accepted).
+
+```@repl e1
+using Statistics
+resample(ts, Month(1), :value => mean)        # monthly mean (Symbol key)
+resample(ts, Week(1), "value" => sum)         # weekly sum (String key)
+resample(ts, Month(1), :value => mean; index_at=last) # label each row with the last date in the period
+resample(ts, Month(1), :value => mean; renamecols=true) # auto-rename to e.g. value_mean
+```
+
+The `index_at` keyword controls which date inside each period is used as the
+label (`first` is the default; pass `last` to label by the period's end).
+Set `renamecols=true` to suffix each output column with the aggregation
+function name (`value` becomes `value_mean`); the default `false` keeps the
+original column names.
+
+Multiple columns can be aggregated at once with different functions:
+
+```@repl e1
+ts_multi = TSFrame(DataFrame(Index=index(ts), price=ts.value, volume=rand(1:100, nr(ts))));
+resample(ts_multi, Month(1), :price => mean, :volume => sum)
+```
+
+### OHLCV auto-detection
+
+When called **without** any column-function pairs, `resample` automatically
+detects standard financial OHLCV columns (`Open`, `High`, `Low`, `Close`,
+`Volume`) and applies the canonical bar-construction rules:
+`Open → first`, `High → maximum`, `Low → minimum`, `Close → last`,
+`Volume → sum`. Columns that are not present are silently skipped, but at
+least one of the five standard OHLCV columns must exist — otherwise an
+`ArgumentError` is thrown.
+
+```@repl e1
+using Random; Random.seed!(1);
+n = 30;
+dts = Date(2024,1,1):Day(1):Date(2024,1,n);
+ohlcv = TSFrame(DataFrame(
+    Index  = collect(dts),
+    Open   = rand(n) .+ 100,
+    High   = rand(n) .+ 101,
+    Low    = rand(n) .+  99,
+    Close  = rand(n) .+ 100,
+    Volume = rand(1000:5000, n),
+));
+resample(ohlcv, Week(1)) # weekly OHLCV bars, no pairs needed
+```
+
+### Gap-aware resampling with `fill_gaps`
+
+By default, `resample` only emits rows for periods that contain at least one
+source observation. Setting the `fill_gaps` keyword inserts rows for empty
+periods so the output has a regular cadence. Several fill strategies are
+available:
+
+| `fill_gaps` value | Behavior on empty periods |
+|---|---|
+| `false` (default) | Do not insert any rows |
+| `:missing` (or `true`) | Insert rows containing `missing` |
+| `:ffill` | Forward-fill from the previous non-missing value |
+| `:bfill` | Backward-fill from the next non-missing value |
+| `:zero` | Fill with `zero(nonmissingtype(eltype(col)))` |
+| `:interpolate` | Linear interpolation between surrounding values (numeric only) |
+| any `Real` (e.g. `0.0`) | Fill with that constant |
+
+The `fill_limit` keyword caps how many consecutive empty rows `:ffill` and
+`:bfill` are allowed to fill (it has no effect on other strategies).
+Pre-existing `missing` values in the source data are preserved — only the
+**newly inserted gap rows** are touched.
+
+```@repl
+using TSFrames, DataFrames, Dates, Statistics;
+sparse_dates = [Date(2024,1,1), Date(2024,1,2), Date(2024,1,5)];
+sparse = TSFrame(DataFrame(Index=sparse_dates, value=[10.0, 20.0, 50.0]));
+resample(sparse, Day(1), :value => mean)                           # gaps for Jan 3, 4 omitted
+resample(sparse, Day(1), :value => mean; fill_gaps=:missing)       # gap rows with missing
+resample(sparse, Day(1), :value => mean; fill_gaps=:ffill)         # forward fill
+resample(sparse, Day(1), :value => mean; fill_gaps=:interpolate)   # linear interpolation
+resample(sparse, Day(1), :value => mean; fill_gaps=:ffill, fill_limit=1) # only 1 consecutive fill
+resample(sparse, Day(1), :value => mean; fill_gaps=0.0)            # constant fill
+```
+
 ## Joins: Row and column binding with other objects
 
 TSFrames provides methods to join two TSFrame objects by columns: `join` (alias:

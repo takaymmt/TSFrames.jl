@@ -78,6 +78,101 @@ function upsample(ts::TSFrame, period::T) where {T<:Union{DatePeriod, TimePeriod
     if period.value <= 0
         throw(DomainError(period.value, "`period.value` needs to be greater than 0"))
     end
-    dex = collect(first(index(ts)):period:last(index(ts)))
-    join(ts, TSFrame(DataFrame(index = dex), :index))
+
+    src_idx = index(ts)
+    n_src = length(src_idx)
+    grid = collect(first(src_idx):period:last(src_idx))
+
+    # Build a merged, sorted, deduplicated index that preserves every source
+    # timestamp (matching the original outerjoin semantics) plus every grid
+    # point produced by the requested period. Both inputs are already sorted,
+    # so a single linear merge is O(n_src + length(grid)).
+    out_idx, src_pos = _merge_sorted_with_positions(src_idx, grid)
+    m = length(out_idx)
+
+    # Source columns excluding the Index column (always at position 1).
+    src_df = ts.coredata
+    col_names = propertynames(src_df)
+    n_data = length(col_names) - 1
+
+    # Construct the resulting DataFrame directly: Index column + data columns.
+    out_df = DataFrame()
+    out_df[!, :Index] = out_idx
+    @inbounds for j in 1:n_data
+        src_col = src_df[!, j + 1]
+        out_df[!, col_names[j + 1]] = _scatter_column(src_col, src_pos, m)
+    end
+
+    TSFrame(out_df, :Index; issorted=true, copycols=false)
+end
+
+# Merge two already-sorted index vectors into a single sorted, deduplicated
+# vector. Returns the merged vector together with `src_pos`, where
+# `src_pos[k]` is the source row index that maps to merged position `k`,
+# or 0 if that position came purely from the grid.
+function _merge_sorted_with_positions(src_idx::AbstractVector, grid::AbstractVector)
+    n = length(src_idx)
+    g = length(grid)
+    out = Vector{eltype(src_idx)}(undef, n + g)
+    src_pos = Vector{Int}(undef, n + g)
+
+    i = 1   # source pointer
+    j = 1   # grid pointer
+    k = 0   # output pointer
+
+    @inbounds while i <= n && j <= g
+        a = src_idx[i]
+        b = grid[j]
+        if a < b
+            k += 1
+            out[k] = a
+            src_pos[k] = i
+            i += 1
+        elseif a > b
+            k += 1
+            out[k] = b
+            src_pos[k] = 0
+            j += 1
+        else
+            # Equal: keep the source row (so its value is carried over) and
+            # consume both pointers, dropping the duplicate from the grid.
+            k += 1
+            out[k] = a
+            src_pos[k] = i
+            i += 1
+            j += 1
+        end
+    end
+    @inbounds while i <= n
+        k += 1
+        out[k] = src_idx[i]
+        src_pos[k] = i
+        i += 1
+    end
+    @inbounds while j <= g
+        k += 1
+        out[k] = grid[j]
+        src_pos[k] = 0
+        j += 1
+    end
+
+    resize!(out, k)
+    resize!(src_pos, k)
+    return out, src_pos
+end
+
+# Build a single output column with the same length as `src_pos`. Positions
+# with `src_pos[k] == 0` become `missing`; other positions copy `src_col[src_pos[k]]`.
+# Defined as a function barrier so the inner loop is type-stable in `eltype(src_col)`.
+function _scatter_column(src_col::AbstractVector, src_pos::Vector{Int}, m::Int)
+    T = eltype(src_col)
+    # If T already permits Missing, we can keep the same eltype; otherwise widen.
+    out = Vector{Union{Missing, T}}(missing, m)
+    @inbounds for k in 1:m
+        p = src_pos[k]
+        if p != 0
+            out[k] = src_col[p]
+        end
+    end
+    return out
 end

@@ -11,6 +11,29 @@ of rows to be shifted over. The skipped rows are rendered as `missing`.
 
 `pctchange` returns an error if column type does not have the method `/`.
 
+# Computation
+
+This implementation uses the absolute value of the lagged element in
+the denominator:
+
+    (x_t - x_{t-periods}) / abs(x_{t-periods})
+
+# Note: Difference from pandas / R
+
+This differs from the standard `pct_change` definition used by pandas
+(`DataFrame.pct_change`) and R (e.g. `(x - dplyr::lag(x)) / dplyr::lag(x)`),
+which divide by the signed lagged value:
+
+    (x_t - x_{t-periods}) / x_{t-periods}
+
+The two definitions agree when the lagged value is positive, but
+differ in sign when the lagged value is negative. For a negative
+previous value, the standard formula flips the sign of the result,
+while this implementation does not (because `abs(...)` keeps the
+denominator positive). If you need pandas/R-compatible behavior on
+series that may contain negative values, compute the percent change
+manually using `lag` (without `abs`).
+
 # Examples
 ```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
 julia> using Random, Statistics;

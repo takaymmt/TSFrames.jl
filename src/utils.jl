@@ -14,7 +14,8 @@ Return the number of rows of `ts`. `nr` is an alias for `nrow`.
 
 # Examples
 ```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
-julia> ts = TSFrame(collect(1:10))
+julia> ts = TSFrame(collect(1:10));
+
 julia> TSFrames.nrow(ts)
 10
 ```
@@ -575,7 +576,7 @@ Check if ts is regular.
 For eg. if unit == :month then check if first difference is constant with respect to months.
 
 # Examples
-```jldoctest; setup = :(using TSFrame, Dates, Random)
+```jldoctest; setup = :(using TSFrames, Dates, Random)
 julia> using Random;
 julia> random(x) = rand(MersenneTwister(123), x);
 
@@ -769,7 +770,22 @@ end
     dst[1]    = first_val
     j = ep[1] + 1
     @inbounds for g in 2:n
-        dst[g] = fn(@view src[j:ep[g]])
+        val = fn(@view src[j:ep[g]])
+        if !(val isa out_T)
+            # Type promotion needed: rebuild dst with promoted type so a later
+            # group whose return type differs from the first group still fits.
+            new_T = Union{Missing, promote_type(nonmissingtype(out_T), typeof(val))}
+            new_dst = Vector{new_T}(undef, n)
+            copyto!(new_dst, 1, dst, 1, g - 1)
+            new_dst[g] = val
+            j = ep[g] + 1
+            for h in g+1:n
+                new_dst[h] = fn(@view src[j:ep[h]])
+                j = ep[h] + 1
+            end
+            return new_dst
+        end
+        dst[g] = val
         j = ep[g] + 1
     end
     dst
