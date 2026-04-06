@@ -237,49 +237,67 @@ function _apply_constant_fill_gaps!(v::AbstractVector, is_gap::AbstractVector{Bo
 end
 
 # Linear interpolation for gap rows (numeric columns only).
-# Uses time-weighted interpolation between the nearest non-missing anchors.
+# Processes contiguous gap-missing segments in O(n) time by finding anchors once per segment.
 function _apply_interpolate_gaps!(combined::DataFrame, is_gap::AbstractVector{Bool})
-    n = size(combined, 1)
     idx_col = combined[!, :Index]
-
     for col in names(combined, Not(:Index))
         v = combined[!, col]
         ElemT = nonmissingtype(eltype(v))
         ElemT <: Number || continue  # skip non-numeric columns
+        _interpolate_column!(v, idx_col, is_gap, ElemT)
+    end
+end
 
-        for i in 1:n
-            (is_gap[i] && ismissing(v[i])) || continue
-
-            # Find left anchor (nearest preceding non-missing value)
-            lo = i - 1
-            while lo >= 1 && ismissing(v[lo])
-                lo -= 1
-            end
-            # Find right anchor (nearest following non-missing value)
-            hi = i + 1
-            while hi <= n && ismissing(v[hi])
-                hi += 1
-            end
-
-            if lo >= 1 && hi <= n
-                t_lo = Dates.value(idx_col[lo])
-                t_hi = Dates.value(idx_col[hi])
-                t_i  = Dates.value(idx_col[i])
-                denom = t_hi - t_lo
-                if denom == 0
-                    v[i] = v[lo]  # duplicate timestamps: use left anchor
-                else
-                    frac = (t_i - t_lo) / denom
-                    v[i] = ElemT <: AbstractFloat ?
-                        v[lo] + frac * (v[hi] - v[lo]) :
-                        round(ElemT, v[lo] + frac * (v[hi] - v[lo]))
-                end
-            elseif lo >= 1
-                v[i] = v[lo]  # extrapolate left if no right anchor
-            elseif hi <= n
-                v[i] = v[hi]  # extrapolate right if no left anchor
-            end
+# Fill one column: find contiguous gap-missing segments and interpolate each segment in O(n).
+function _interpolate_column!(v::AbstractVector, idx_col, is_gap::AbstractVector{Bool}, ::Type{ElemT}) where {ElemT}
+    n = length(v)
+    i = 1
+    while i <= n
+        # Advance past non-gap or already-filled positions
+        if !(is_gap[i] && ismissing(v[i]))
+            i += 1
+            continue
         end
+        # Found the start of a contiguous gap-missing segment; extend to seg_end
+        seg_end = i
+        while seg_end < n && is_gap[seg_end + 1] && ismissing(v[seg_end + 1])
+            seg_end += 1
+        end
+        # Segment is [i, seg_end]; find anchors once
+        lo = i - 1
+        while lo >= 1 && ismissing(v[lo])
+            lo -= 1
+        end
+        hi = seg_end + 1
+        while hi <= n && ismissing(v[hi])
+            hi += 1
+        end
+        # Fill all positions in the segment
+        if lo >= 1 && hi <= n
+            t_lo  = Dates.value(idx_col[lo])
+            t_hi  = Dates.value(idx_col[hi])
+            denom = t_hi - t_lo
+            if denom == 0
+                for k in i:seg_end; v[k] = v[lo]; end
+            elseif ElemT <: AbstractFloat
+                v_lo = v[lo]; v_hi = v[hi]; span = v_hi - v_lo
+                for k in i:seg_end
+                    frac = (Dates.value(idx_col[k]) - t_lo) / denom
+                    v[k] = v_lo + frac * span
+                end
+            else
+                v_lo = v[lo]; v_hi = v[hi]; span = v_hi - v_lo
+                for k in i:seg_end
+                    frac = (Dates.value(idx_col[k]) - t_lo) / denom
+                    v[k] = round(ElemT, v_lo + frac * span)
+                end
+            end
+        elseif lo >= 1
+            for k in i:seg_end; v[k] = v[lo]; end
+        elseif hi <= n
+            for k in i:seg_end; v[k] = v[hi]; end
+        end
+        i = seg_end + 1
     end
 end
 

@@ -234,8 +234,14 @@ function generate_report(files::Vector{String}; labels=nothing, output=nothing, 
         # Already filtered — output as single section
         _write_group_table(out, group_filter, results, col_labels, has_comparison)
     else
-        # Iterate over top-level groups
-        top_groups = sort(collect(keys(results[1])))
+        # Iterate over union of top-level groups across all result files
+        all_group_keys = Set{String}()
+        for r in results
+            for k in keys(r)
+                push!(all_group_keys, string(k))
+            end
+        end
+        top_groups = sort(collect(all_group_keys))
         for tg in top_groups
             group_results = map(results) do r
                 haskey(r, tg) ? r[tg] : nothing
@@ -333,12 +339,12 @@ function _write_group_table(out, group_name, group_results, col_labels, has_comp
 
         for (idx, gr) in enumerate(group_results)
             if gr === nothing
-                push!(row, "N/A")
+                push!(row, "")
                 continue
             end
             leaf_node = navigate_leaf(gr, path)
             if leaf_node === nothing
-                push!(row, "N/A")
+                push!(row, "")
                 continue
             end
             t = BenchmarkTools.minimum(leaf_node).time
@@ -580,12 +586,12 @@ function _write_resample_comparison_table(out, group_results, col_labels)
 
             for (idx, gr) in enumerate(group_results)
                 if gr === nothing
-                    push!(row, "N/A")
+                    push!(row, "")
                     continue
                 end
                 leaf_node = navigate_leaf(gr, path)
                 if leaf_node === nothing
-                    push!(row, "N/A")
+                    push!(row, "")
                     continue
                 end
                 t = BenchmarkTools.minimum(leaf_node).time

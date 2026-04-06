@@ -37,6 +37,7 @@ function parse_args(args)
         :save     => nothing,
         :groups   => nothing,
         :report   => nothing,
+        :output   => nothing,
         :tune     => false,
         :verbose  => false,
         :desc     => "",
@@ -60,6 +61,9 @@ function parse_args(args)
             end
             config[:report] = files
             continue
+        elseif arg == "--output"
+            i += 1
+            config[:output] = args[i]
         elseif arg == "--desc"
             i += 1
             config[:desc] = args[i]
@@ -217,14 +221,14 @@ end
 
 # ── Report Mode ──────────────────────────────────────────────────────────────
 
-function run_report(files)
+function run_report(files; output=nothing)
     if isempty(files)
         error("Report requires at least 1 file.")
     end
 
     # Delegate to analysis/report.jl
     include(joinpath(@__DIR__, "analysis", "report.jl"))
-    Base.invokelatest(generate_report, files)
+    Base.invokelatest(generate_report, files; output=output)
 end
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -234,7 +238,7 @@ function main()
     _verbose[] = config[:verbose]
 
     if config[:report] !== nothing
-        run_report(config[:report])
+        run_report(config[:report]; output=config[:output])
     else
         run_benchmarks(config)
     end
