@@ -1,12 +1,14 @@
 # Benchmark: rollapply() function
 #
 # Tests:
-#   - rollapply(ts, mean, 5)
-#   - rollapply(ts, sum, 20)
-#   - rollapply(ts, std, 10)
+#   - rollapply(ts, mean, 5)              — bycolumn=true (default)
+#   - rollapply(ts, sum, 20)              — bycolumn=true
+#   - rollapply(ts, std, 10)              — bycolumn=true (small/medium only)
+#   - rollapply(ts, identity, 5; bycolumn=false) — whole-window path
 #
 # Note: rollapply with large data is expensive, so large size uses
 # a reduced row count for practical benchmark times.
+# bycolumn=false exercises a separate code path (Vector{Any} + fun(TSFrame)).
 
 using BenchmarkTools, Dates, DataFrames, Random, Statistics
 using TSFrames
@@ -29,6 +31,9 @@ for (label, n) in [("small", 1_000), ("medium", 25_000), ("large", 100_000)]
     if n <= 25_000
         grp["std_w10"] = @benchmarkable rollapply($ts, std, 10)
     end
+
+    # bycolumn=false: whole-window function receives a TSFrame slice
+    grp["bycolumn_false_w5"] = @benchmarkable rollapply($ts, ts -> TSFrames.nrow(ts), 5; bycolumn=false)
 
     BENCH_ROLLAPPLY[label] = grp
 end

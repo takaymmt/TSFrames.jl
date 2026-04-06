@@ -1,7 +1,7 @@
 # Benchmark: lag(), lead(), diff(), pctchange()
 #
 # Tests:
-#   - lag(ts), lag(ts, 5)
+#   - lag(ts), lag(ts, 5), lag(ts, -3)
 #   - lead(ts), lead(ts, 5)
 #   - diff(ts), diff(ts, 5)
 #   - pctchange(ts), pctchange(ts, 5)
@@ -21,8 +21,9 @@ for (label, n) in [("small", 1_000), ("medium", 25_000), ("large", 1_000_000)]
     grp = BenchmarkGroup()
 
     # lag
-    grp["lag_1"] = @benchmarkable lag($ts)
-    grp["lag_5"] = @benchmarkable lag($ts, 5)
+    grp["lag_1"]  = @benchmarkable lag($ts)
+    grp["lag_5"]  = @benchmarkable lag($ts, 5)
+    grp["lag_neg3"] = @benchmarkable lag($ts, -3)
 
     # lead
     grp["lead_1"] = @benchmarkable lead($ts)
