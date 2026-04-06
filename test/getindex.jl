@@ -303,11 +303,22 @@ ind = Year(2007)
 test_types(ts[ind])
 @test unique(Dates.year.(TSFrames.index(ts[ind]))) == [2007]
 
+# Year out of range or not in data
+@test TSFrames.nrow(ts[Year(9999)]) == 0
+@test TSFrames.nrow(ts[Year(0)]) == 0
+# Year not present in the TSFrame (data spans 2007-01-01 .. ~2008-02-04)
+@test TSFrames.nrow(ts[Year(2006)]) == 0
+@test TSFrames.nrow(ts[Year(2009)]) == 0
+
 # getindex(ts, y::Year, m::Month)
 y = Year(2007)
 m = Month(3)
 test_types(ts[y, m])
 @test unique(Dates.yearmonth.(TSFrames.index(ts[y, m]))) == [(2007, 3)]
+
+# Month out of range
+@test TSFrames.nrow(ts[Year(2007), Month(0)]) == 0
+@test TSFrames.nrow(ts[Year(2007), Month(13)]) == 0
 
 # getindex(ts, i::String)
 ind = "2007-10-01"
@@ -378,6 +389,8 @@ test_types(ts[ind])
 # getindex(ts::TSFrame, y::Year, m::Month, d::Day, h::Hour)
 @test index(getindex(tsdatetimes, Year(2007), Month(1), Day(2), Hour(25))) == []
 @test index(getindex(tsdatetimes, Year(2007), Month(1), Day(2), Hour(-1))) == []
+# Regression: Hour(24) must not roll over to the next day
+@test index(getindex(tsdatetimes, Year(2007), Month(1), Day(2), Hour(24))) == []
 @test index(getindex(tsdatetimes, Year(2007), Month(1), Day(2), Hour(3))) ==
     [DateTime(2007, 01, 02, 03, 00, 00)]
 
@@ -425,6 +438,10 @@ y = Year(2007); q = Quarter(5)
 t = ts[y, q]
 test_types(t)
 @test TSFrames.nrow(t) == 0
+
+# Quarter out of range (zero / negative)
+@test TSFrames.nrow(ts[Year(2007), Quarter(0)]) == 0
+@test TSFrames.nrow(ts[Year(2007), Quarter(-1)]) == 0
 
 # getindex(ts::TSFrame, y::Year, m::Month, d::Day)
 y = Year(2007); m = Month(1); d = Day(1)

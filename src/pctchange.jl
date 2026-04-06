@@ -83,6 +83,8 @@ function pctchange(ts::TSFrame, periods::Int = 1)
         throw(ArgumentError("periods must be a positive int"))
     end
     data = ts.coredata[!, Not(:Index)]
+    # copycols=false: ShiftedArrays.lag returns lazy views; the broadcast below
+    # creates a fresh DataFrame so lagged_data never aliases ts.coredata.
     lagged_data = DataFrame(ShiftedArrays.lag.(eachcol(data), periods), TSFrames.names(ts); copycols=false)
     ddf = (data .- lagged_data) ./ abs.(lagged_data)
     _wrap_with_index(ddf, index(ts))
