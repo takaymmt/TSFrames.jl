@@ -72,13 +72,19 @@ julia> lag(ts, 2) # lags by 2 values
 ```
 """
 function lag(ts::TSFrame, lag_value::Int = 1)
-    isempty(index(ts)) && return TSFrame(copy(ts.coredata))
-
     n = TSFrames.nrow(ts)
-    col_names = TSFrames.names(ts)
+    # Safe clamp without arithmetic overflow on `lag_value` (e.g. typemin(Int)).
+    k = lag_value > n ? n : lag_value < -n ? -n : lag_value
+    _shift_tsframe(ts, k, n)
+end
+
+# Internal helper: shift every column of `ts` by `k` rows. The caller MUST
+# pre-clamp `k` into `[-n, n]` to avoid integer overflow inside `_shift_column`.
+# Both `lag` and `lead` funnel through this helper to share one optimised loop.
+function _shift_tsframe(ts::TSFrame, k::Int, n::Int = TSFrames.nrow(ts))
     sdf = DataFrame()
-    for col in col_names
-        sdf[!, col] = _shift_column(ts.coredata[!, col], lag_value, n)
+    for col in TSFrames.names(ts)
+        sdf[!, col] = _shift_column(ts.coredata[!, col], k, n)
     end
     _wrap_with_index(sdf, index(ts))
 end
@@ -90,6 +96,9 @@ end
 # V<:AbstractVector forces Julia to specialise on the concrete column type, so
 # eltype(V) is statically known and the inner loops are type-stable with no
 # per-element boxing — same pattern as _alloc_and_fill_col in utils.jl.
+#
+# NOTE: callers (lag/lead via _shift_tsframe) clamp `k` into `[-n, n]` so we
+# never perform `-k` on values that would overflow (e.g. `typemin(Int)`).
 @inline function _shift_column(v::V, k::Int, n::Int) where {V<:AbstractVector}
     T = Union{Missing, eltype(V)}
     out = Vector{T}(undef, n)
@@ -99,7 +108,7 @@ end
         end
     elseif k > 0
         # lag: vacated slots [1:k] become missing, then out[k+1:n] = v[1:n-k]
-        kk = min(k, n)
+        kk = k >= n ? n : k   # safe: k > 0 here, no negation needed
         @inbounds for i in 1:kk
             out[i] = missing
         end
@@ -108,7 +117,8 @@ end
         end
     else
         # lead: out[1:n+k] = v[1-k:n], then vacated slots [n+k+1:n] become missing
-        kk = min(-k, n)
+        # k < 0 here; clamp via comparison instead of arithmetic on k.
+        kk = k <= -n ? n : -k
         @inbounds for i in 1:(n - kk)
             out[i] = v[i + kk]
         end

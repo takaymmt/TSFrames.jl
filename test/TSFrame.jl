@@ -279,6 +279,26 @@ end
     @test ts.coredata[3, :x1] == 30.0
 end
 
+@testset "TSFrame accepts Integer subtypes as index" begin
+    # Int8 index
+    ts_i8 = TSFrame(rand(5), Int8.(1:5))
+    @test ts_i8 isa TSFrame
+    @test TSFrames.nrow(ts_i8) == 5
+    # UInt32 index
+    ts_u32 = TSFrame(rand(5), UInt32.(1:5))
+    @test ts_u32 isa TSFrame
+    @test TSFrames.nrow(ts_u32) == 5
+    # BigInt index
+    ts_big = TSFrame(rand(3), BigInt.(1:3))
+    @test ts_big isa TSFrame
+    @test TSFrames.nrow(ts_big) == 3
+    # DataFrame with Integer index column
+    ts_df = TSFrame(DataFrame(x=rand(4)), Int16.(1:4))
+    @test ts_df isa TSFrame
+    # Float64 index should still be rejected
+    @test_throws ArgumentError TSFrame(DataFrame(Index=[1.0, 2.0], x=[1, 2]))
+end
+
 @testset "TSFrame from DataFrame with unsorted index column" begin
     # When constructing from a DataFrame with an index *column*, the
     # DataFrame is sorted by the index column so data stays aligned.

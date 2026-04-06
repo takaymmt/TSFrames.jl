@@ -96,3 +96,21 @@ end
     @test isequal(lead_neg[:, :x1], lagged_pos[:, :x1])
     @test isequal(lead_neg[:, :Index], lagged_pos[:, :Index])
 end
+
+@testset "lead extreme Int values (C2 regression)" begin
+    ts = TSFrame(Float64[1.0, 2.0, 3.0], Date(2020,1,1):Day(1):Date(2020,1,3) |> collect)
+    result_min = lead(ts, typemin(Int))
+    result_max = lead(ts, typemax(Int))
+    @test TSFrames.nrow(result_min) == 3
+    @test all(ismissing, result_min[:, 1])
+    @test TSFrames.nrow(result_max) == 3
+    @test all(ismissing, result_max[:, 1])
+end
+
+@testset "lead empty TSFrame returns correct eltype" begin
+    empty_ts = TSFrame(Float64[], Date[])
+    result = lead(empty_ts)
+    @test TSFrames.nrow(result) == 0
+    one_ts = TSFrame(Float64[1.0], [Date(2020,1,1)])
+    @test eltype(result[:, 1]) == eltype(lead(one_ts)[:, 1])
+end

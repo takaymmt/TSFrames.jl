@@ -21,8 +21,8 @@ ts_diff = diff(ts, DATA_SIZE + 1)
 
 @testset "diff throws on invalid period" begin
     ts_err = TSFrame(integer_data_vector, index_timetype)
-    @test_throws ErrorException diff(ts_err, 0)
-    @test_throws ErrorException diff(ts_err, -1)
+    @test_throws ArgumentError diff(ts_err, 0)
+    @test_throws ArgumentError diff(ts_err, -1)
 end
 
 @testset "diff multi-column" begin
@@ -56,4 +56,24 @@ end
         @test ts_mc_diff3[i, :a] == col1[i] - col1[i - 3]
         @test ts_mc_diff3[i, :b] == col2[i] - col2[i - 3]
     end
+end
+
+@testset "diff extreme Int values (C1 regression)" begin
+    ts = TSFrame(Float64[1.0, 2.0, 3.0], Date(2020,1,1):Day(1):Date(2020,1,3) |> collect)
+    # periods > nrow should return all-missing
+    result = diff(ts, 100)
+    @test TSFrames.nrow(result) == 3
+    @test all(ismissing, result[:, 1])
+    # typemax(Int) should not crash
+    result_max = diff(ts, typemax(Int))
+    @test TSFrames.nrow(result_max) == 3
+    @test all(ismissing, result_max[:, 1])
+end
+
+@testset "diff empty TSFrame returns correct eltype" begin
+    empty_ts = TSFrame(Float64[], Date[])
+    result = diff(empty_ts)
+    @test TSFrames.nrow(result) == 0
+    one_ts = TSFrame(Float64[1.0], [Date(2020,1,1)])
+    @test eltype(result[:, 1]) == eltype(diff(one_ts)[:, 1])
 end

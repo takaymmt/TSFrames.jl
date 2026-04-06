@@ -120,3 +120,11 @@ end
     empty_ts = TSFrame(DataFrame(A=Float64[], Index=Date[]))
     @test TSFrames.nrow(upsample(empty_ts, Day(1))) == 0
 end
+
+# -- 8. Invalid period guard ---------------------------------------------------
+
+@testset "upsample invalid period" begin
+    ts = TSFrame(rand(3), Date(2020,1,1):Day(1):Date(2020,1,3) |> collect)
+    @test_throws DomainError upsample(ts, Day(0))
+    @test_throws DomainError upsample(ts, Day(-1))
+end

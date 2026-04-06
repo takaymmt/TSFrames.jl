@@ -110,15 +110,12 @@ end
     @test TSFrames.nrow(out) == 0
 end
 
-# Oversized window should warn and clamp to nrow(ts).
-@testset "rollapply windowsize > nrow warns and clamps" begin
+# Oversized window should throw ArgumentError (was: warn and clamp).
+@testset "rollapply windowsize > nrow throws" begin
     small_size = 5
     small_dates = Date(2020, 1, 1):Day(1):Date(2020, 1, small_size) |> collect
     small_ts = TSFrame(Float64.(collect(1:small_size)), small_dates)
-    clamped = (@test_logs (:warn, r"exceeds nrow") rollapply(small_ts, Statistics.mean, 10))
-    @test length(clamped) == 1
-    @test clamped[1, :rolling_x1_mean] ≈ Statistics.mean(1.0:5.0)
-    @test index(clamped) == [small_dates[end]]
+    @test_throws ArgumentError rollapply(small_ts, Statistics.mean, 10)
 end
 
 # Sanity check: fast-path results match a naive per-window reference.
@@ -148,4 +145,14 @@ end
     @test fast_sum[:, :rolling_x1_sum]      ≈ ref_sum
     @test fast_max[:, :rolling_x1_maximum]  ≈ ref_max
     @test fast_min[:, :rolling_x1_minimum]  ≈ ref_min
+end
+
+@testset "rollapply fast path median equals naive reference" begin
+    n = 10
+    w = 3
+    vals = rand(n)
+    naive_ts = TSFrame(vals, Date(2020,1,1):Day(1):Date(2020,1,n) |> collect)
+    fast_result = rollapply(naive_ts, Statistics.median, w)
+    expected = [Statistics.median(vals[i:i+w-1]) for i in 1:(n-w+1)]
+    @test fast_result[:, :rolling_x1_median] ≈ expected
 end

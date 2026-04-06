@@ -2,7 +2,7 @@
 # Subsetting based on Index
 
 ```julia
-subset(ts::TSFrame, from::T, to::T) where {T<:Union{Int, TimeType}}
+subset(ts::TSFrame, from::T, to::T) where {T<:Union{Integer, TimeType}}
 ```
 
 Create a subset of `ts` based on the `Index` starting `from`
@@ -138,29 +138,29 @@ julia> subset(ts,Date("2022-9-27"),:)
 ```
 
 """
-function subset(ts::TSFrame, from::T, to::T) where {T<:Union{Int, TimeType}}
+function subset(ts::TSFrame, from::T, to::T) where {T<:Union{Integer, TimeType}}
     idx = index(ts)
-    isempty(idx) && return TSFrame(ts.coredata[1:0, :])
+    isempty(idx) && return TSFrame(ts.coredata[1:0, :], :Index; issorted=true, copycols=false)
     # Index is sorted: O(log n) binary search instead of O(n) linear scan
     i1 = searchsortedfirst(idx, from)  # first position with idx[i] >= from
     i2 = searchsortedlast(idx, to)     # last position with idx[i] <= to
-    i1 > i2 && return TSFrame(ts.coredata[1:0, :])
-    return TSFrame(ts.coredata[i1:i2, :])
+    i1 > i2 && return TSFrame(ts.coredata[1:0, :], :Index; issorted=true, copycols=false)
+    return TSFrame(ts.coredata[i1:i2, :], :Index; issorted=true, copycols=false)
 end
 
 
-function subset(ts::TSFrame, ::Colon, to::T) where {T<:Union{Int, TimeType}}
+function subset(ts::TSFrame, ::Colon, to::T) where {T<:Union{Integer, TimeType}}
     idx = index(ts)
-    isempty(idx) && return TSFrame(ts.coredata[1:0, :])
+    isempty(idx) && return TSFrame(ts.coredata[1:0, :], :Index; issorted=true, copycols=false)
     i2 = searchsortedlast(idx, to)
-    i2 < 1 && return TSFrame(ts.coredata[1:0, :])
-    return TSFrame(ts.coredata[1:i2, :])
+    i2 < 1 && return TSFrame(ts.coredata[1:0, :], :Index; issorted=true, copycols=false)
+    return TSFrame(ts.coredata[1:i2, :], :Index; issorted=true, copycols=false)
 end
 
-function subset(ts::TSFrame, from::T, ::Colon) where {T<:Union{Int, TimeType}}
+function subset(ts::TSFrame, from::T, ::Colon) where {T<:Union{Integer, TimeType}}
     idx = index(ts)
-    isempty(idx) && return TSFrame(ts.coredata[1:0, :])
+    isempty(idx) && return TSFrame(ts.coredata[1:0, :], :Index; issorted=true, copycols=false)
     i1 = searchsortedfirst(idx, from)
-    i1 > length(idx) && return TSFrame(ts.coredata[1:0, :])
-    return TSFrame(ts.coredata[i1:end, :])
+    i1 > length(idx) && return TSFrame(ts.coredata[1:0, :], :Index; issorted=true, copycols=false)
+    return TSFrame(ts.coredata[i1:end, :], :Index; issorted=true, copycols=false)
 end

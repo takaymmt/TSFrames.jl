@@ -518,3 +518,12 @@ let
     @test_throws KeyError ts_dt[DateTime(2020, 1, 1, 1), 1]
     @test ts_dt[DateTime(2020, 1, 1, 2), :A] == 20
 end
+
+@testset "getindex vector TimeType throws KeyError on miss" begin
+    ts = TSFrame(rand(3), [Date(2020,1,1), Date(2020,1,3), Date(2020,1,5)])
+    # Missing date in vector
+    @test_throws KeyError ts[[Date(2020,1,1), Date(2020,1,2)]]  # 2020-01-02 is missing
+    # All valid dates should work
+    result = ts[[Date(2020,1,1), Date(2020,1,3)]]
+    @test TSFrames.nrow(result) == 2
+end

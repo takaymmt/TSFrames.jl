@@ -77,3 +77,21 @@ ts_subset = TSFrames.subset(ts_timetype, MIDDATE, LASTDATE + Day(5))
 ts_subset = TSFrames.subset(ts_timetype, LASTDATE + Day(1), LASTDATE + Day(5))
 @test TSFrames.nrow(ts_subset) == 0
 @test TSFrames.nrow(TSFrames.subset(ts_timetype, LASTDATE + Day(1), :)) == 0
+
+@testset "subset empty TSFrame" begin
+    empty_int = TSFrame(Float64[], Int[])
+    empty_dt  = TSFrame(Float64[], Date[])
+    @test TSFrames.nrow(TSFrames.subset(empty_int, 1, 5)) == 0
+    @test TSFrames.nrow(TSFrames.subset(empty_int, :, 5)) == 0
+    @test TSFrames.nrow(TSFrames.subset(empty_int, 1, :)) == 0
+    @test TSFrames.nrow(TSFrames.subset(empty_dt, Date(2020,1,1), Date(2020,1,5))) == 0
+end
+
+@testset "subset non-aligned boundary" begin
+    ts_sparse = TSFrame(Float64.(1:4), [1, 3, 5, 7])
+    sub = TSFrames.subset(ts_sparse, 2, 4)
+    @test TSFrames.nrow(sub) == 1
+    @test sub[1, :Index] == 3
+    # from > to returns empty
+    @test TSFrames.nrow(TSFrames.subset(ts_sparse, 5, 2)) == 0
+end

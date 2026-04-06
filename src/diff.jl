@@ -76,9 +76,8 @@ julia> diff(ts, 3)[1:10]     # difference over the third row
 # Diff
 function diff(ts::TSFrame, periods::Int = 1)
     if periods <= 0
-        error("periods must be a positive int")
+        throw(ArgumentError("periods must be a positive Int"))
     end
-    isempty(index(ts)) && return TSFrame(copy(ts.coredata))
 
     n = TSFrames.nrow(ts)
     col_names = TSFrames.names(ts)
@@ -91,15 +90,20 @@ end
 
 # Internal helper: per-column discrete difference with leading `missing`
 # entries, parameterised on the column type so the inner loop is type-stable.
+#
+# `periods` is validated as `> 0` upstream. Clamping to `min(periods, n)` makes
+# the second loop safe even when `periods == typemax(Int)` (otherwise
+# `periods + 1` would overflow). When `n == 0` both loops are empty and we
+# still return a correctly-typed `Vector{Union{Missing, eltype(V)}}`.
 @inline function _diff_column(v::V, periods::Int, n::Int) where {V<:AbstractVector}
     T = Union{Missing, eltype(V)}
     out = Vector{T}(undef, n)
-    kk = min(periods, n)
-    @inbounds for i in 1:kk
+    p = periods >= n ? n : periods   # safe clamp; periods > 0 by precondition
+    @inbounds for i in 1:p
         out[i] = missing
     end
-    @inbounds for i in (periods + 1):n
-        out[i] = v[i] - v[i - periods]
+    @inbounds for i in (p + 1):n
+        out[i] = v[i] - v[i - p]
     end
     return out
 end

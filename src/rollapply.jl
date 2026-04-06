@@ -12,13 +12,25 @@ to be applied to each column separately, and to `false` if `fun` takes
 a whole `TSFrame` as an input.
 
 When `bycolumn=true` and `fun` is one of a small set of well-known
-reductions (`mean`, `std`, `var`, `sum`, `maximum`, `minimum`,
-`median`), the implementation dispatches to the corresponding fast
-routine in `RollingFunctions.jl`. For arbitrary functions, a generic
-per-column rolling implementation is used (also backed by
+reductions (`mean`, `std`, `var`, `maximum`, `minimum`, `median`), the
+implementation dispatches to the corresponding fast routine in
+`RollingFunctions.jl`. For arbitrary functions (including `sum`), a
+generic per-column rolling implementation is used (also backed by
 `RollingFunctions.rolling`), avoiding the previous per-window DataFrame
 allocations. The `bycolumn=false` path applies `fun` to a sliced
 `TSFrame` window as before.
+
+!!! note "Integer columns are widened to `Float64`"
+    When `bycolumn=true` and `fun` is one of the fast-path functions
+    listed above, integer columns will be widened to `Float64` in the
+    output. This is a consequence of the underlying
+    `RollingFunctions.jl` implementation, which always returns
+    `Float64` arrays.
+
+!!! note "Errors on oversized windows"
+    `rollapply` throws an `ArgumentError` when `windowsize > nrow(ts)`.
+    Previously this case emitted a warning and clamped the window to
+    `nrow(ts)`; the explicit error makes the contract unambiguous.
 
 # Examples
 ```jldoctest; setup = :(using TSFrames, DataFrames, Statistics, StatsModels, StatsBase, GLM, Dates)
@@ -73,9 +85,10 @@ julia> rollapply(ts, regress, 5; bycolumn=false)    # doing multiple regressions
 ```
 """
 # Mapping from common Julia reductions to their RollingFunctions equivalents.
-# Both `Statistics.mean` and `Base.maximum`/`Base.minimum`/`Base.sum` are
-# covered. `sum` does not have a `rollsum` in RollingFunctions, so we route
-# it through the generic `rolling(sum, ...)` path inside the implementation.
+# `Statistics.mean`/`std`/`var`/`median` and `Base.maximum`/`Base.minimum`
+# are covered. `sum` does not have a `rollsum` in RollingFunctions, so it is
+# intentionally absent here and is routed through the generic
+# `rolling(sum, ...)` path inside the implementation.
 const _ROLLING_FAST_FUNCS = IdDict{Function, Function}(
     Statistics.mean   => RollingFunctions.rollmean,
     Statistics.std    => RollingFunctions.rollstd,
@@ -92,14 +105,13 @@ function rollapply(ts::TSFrame, fun::Function, windowsize::Int; bycolumn=true)
 
     n = TSFrames.nrow(ts)
 
-    # Empty TSFrame guard: return an empty TSFrame untouched.
+    # Empty TSFrame guard: return a fresh empty TSFrame (no aliasing).
     if n == 0
-        return ts
+        return TSFrame(copy(ts.coredata), :Index; issorted=true, copycols=false)
     end
 
     if windowsize > n
-        @warn "windowsize ($(windowsize)) exceeds nrow(ts) ($(n)); clamping to $(n)"
-        windowsize = n
+        throw(ArgumentError("windowsize ($windowsize) exceeds nrow(ts) ($n)"))
     end
 
     if bycolumn

@@ -71,7 +71,13 @@ DateTime             Float64?
 """
 
 function upsample(ts::TSFrame, period::T) where {T<:Union{DatePeriod, TimePeriod}}
-    isempty(index(ts)) && return ts
+    # Empty guard: return a fresh empty TSFrame (no aliasing of input).
+    if isempty(index(ts))
+        return TSFrame(copy(ts.coredata), :Index; issorted=true, copycols=false)
+    end
+    if period.value <= 0
+        throw(DomainError(period.value, "`period.value` needs to be greater than 0"))
+    end
     dex = collect(first(index(ts)):period:last(index(ts)))
     join(ts, TSFrame(DataFrame(index = dex), :index))
 end

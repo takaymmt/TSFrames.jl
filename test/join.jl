@@ -186,3 +186,10 @@ end
     @test TSFrames.nrow(ts_empty_inner) == 0
     @test propertynames(ts_empty_inner.coredata) == [:Index, :x1, :x1_1]
 end
+
+@testset "join invalid jointype throws ArgumentError" begin
+    ts_a = TSFrame(rand(3), Date(2020,1,1):Day(1):Date(2020,1,3) |> collect)
+    ts_b = TSFrame(rand(3), Date(2020,1,1):Day(1):Date(2020,1,3) |> collect)
+    @test_throws ArgumentError join(ts_a, ts_b; jointype=:NotAJoin)
+    @test_throws ArgumentError join(ts_a, ts_b; jointype=:Bogus)
+end

@@ -248,6 +248,20 @@ julia> ts[1, "x1"]; # same as above
 ```
 """
 ###
+## Internal helpers
+###
+
+# Locate `dt` in the TSFrame index, throwing KeyError if not present.
+# Centralises the searchsortedfirst + bounds-check + equality guard used
+# by every TimeType-based getindex method.
+@inline function _exact_index_or_throw(ts::TSFrame, dt)
+    idx_vec = index(ts)
+    i = searchsortedfirst(idx_vec, dt)
+    (i > length(idx_vec) || idx_vec[i] != dt) && throw(KeyError(dt))
+    return i
+end
+
+###
 ## Row-Column interfaces
 ###
 
@@ -261,19 +275,13 @@ function Base.getindex(ts::TSFrame, i::Int, j::Union{Symbol, String})
 end
 
 function Base.getindex(ts::TSFrame, dt::T, j::Int) where {T<:TimeType}
-    idx = searchsortedfirst(index(ts), dt)
-    if idx > length(index(ts)) || index(ts)[idx] != dt
-        throw(KeyError(dt))
-    end
-    ts.coredata[idx, j+1]
+    i = _exact_index_or_throw(ts, dt)
+    ts.coredata[i, j+1]
 end
 
 function Base.getindex(ts::TSFrame, dt::T, j::Union{String, Symbol}) where {T<:TimeType}
-    idx = searchsortedfirst(index(ts), dt)
-    if idx > length(index(ts)) || index(ts)[idx] != dt
-        throw(KeyError(dt))
-    end
-    ts.coredata[idx, j]
+    i = _exact_index_or_throw(ts, dt)
+    ts.coredata[i, j]
 end
 ###
 
@@ -287,19 +295,13 @@ function Base.getindex(ts::TSFrame, i::Int, j::AbstractVector{T}) where {T<:Unio
 end
 
 function Base.getindex(ts::TSFrame, dt::T, j::AbstractVector{Int}) where {T<:TimeType}
-    idx = searchsortedfirst(index(ts), dt)
-    if idx > length(index(ts)) || index(ts)[idx] != dt
-        throw(KeyError(dt))
-    end
-    ts[idx, j]
+    i = _exact_index_or_throw(ts, dt)
+    ts[i, j]
 end
 
 function Base.getindex(ts::TSFrame, dt::D, j::AbstractVector{T}) where {D<:TimeType, T<:Union{String, Symbol}}
-    idx = searchsortedfirst(index(ts), dt)
-    if idx > length(index(ts)) || index(ts)[idx] != dt
-        throw(KeyError(dt))
-    end
-    ts[idx, j]
+    i = _exact_index_or_throw(ts, dt)
+    ts[i, j]
 end
 ###
 
@@ -319,19 +321,13 @@ function Base.getindex(ts::TSFrame, i::AbstractVector{Int}, j::Union{String, Sym
 end
 
 function Base.getindex(ts::TSFrame, dt::AbstractVector{T}, j::Int) where {T<:TimeType}
-    idx = map(d -> searchsortedfirst(index(ts), d), dt)
-    if length(idx) == 0
-        return nothing
-    end
-    ts[idx, j]
+    row_indices = [_exact_index_or_throw(ts, d) for d in dt]
+    ts[row_indices, j]
 end
 
 function Base.getindex(ts::TSFrame, dt::AbstractVector{T}, j::Union{String, Symbol}) where {T<:TimeType}
-    idx = map(d -> searchsortedfirst(index(ts), d), dt)
-    if length(idx) == 0
-        return nothing
-    end
-    ts[idx, j]
+    row_indices = [_exact_index_or_throw(ts, d) for d in dt]
+    ts[row_indices, j]
 end
 ###
 
@@ -345,16 +341,13 @@ function Base.getindex(ts::TSFrame, i::AbstractVector{Int}, j::AbstractVector{T}
 end
 
 function Base.getindex(ts::TSFrame, dt::AbstractVector{T}, j::AbstractVector{Int}) where {T<:TimeType}
-    idx = map(d -> searchsortedfirst(index(ts), d), dt)
-    if length(idx) == 0
-        return nothing
-    end
-    ts[idx, j]
+    row_indices = [_exact_index_or_throw(ts, d) for d in dt]
+    ts[row_indices, j]
 end
 
 function Base.getindex(ts::TSFrame, dt::AbstractVector{D}, j::AbstractVector{T}) where {D<:TimeType, T<:Union{String, Symbol}}
-    idx = map(d -> searchsortedfirst(index(ts), d), dt)
-    ts[idx, j]
+    row_indices = [_exact_index_or_throw(ts, d) for d in dt]
+    ts[row_indices, j]
 end
 ###
 
@@ -416,11 +409,8 @@ function Base.getindex(ts::TSFrame, dt::AbstractVector{T}) where {T<:TimeType}
 end
 
 function Base.getindex(ts::TSFrame, d::T) where {T<:TimeType}
-    idx = searchsortedfirst(index(ts), d)
-    if idx > length(index(ts)) || index(ts)[idx] != d
-        throw(KeyError(d))
-    end
-    ts[[idx], 1:TSFrames.ncol(ts)]
+    i = _exact_index_or_throw(ts, d)
+    ts[[i], 1:TSFrames.ncol(ts)]
 end
 
 # By period
@@ -532,10 +522,7 @@ end
 # By string timestamp
 function Base.getindex(ts::TSFrame, i::String)
     d::Date = Date(Dates.parse_components(i, Dates.dateformat"yyyy-mm-dd")...)
-    first_idx = searchsortedfirst(index(ts), d)
-    if first_idx > length(index(ts)) || index(ts)[first_idx] != d
-        throw(KeyError(d))
-    end
+    first_idx = _exact_index_or_throw(ts, d)
     last_idx = searchsortedlast(index(ts), d)
     ts[first_idx:last_idx]
 end

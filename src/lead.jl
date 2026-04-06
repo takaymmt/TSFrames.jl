@@ -80,15 +80,17 @@ julia> lead(ts, 2)[1:10]     # leads by 2 values
 ```
 """
 function lead(ts::TSFrame, lead_value::Int = 1)
-    isempty(index(ts)) && return TSFrame(copy(ts.coredata))
-
     n = TSFrames.nrow(ts)
-    col_names = TSFrames.names(ts)
-    sdf = DataFrame()
-    for col in col_names
-        # lead by k is identical to lag by -k; reuse the type-barrier helper
-        # defined in lag.jl so both functions share one optimised loop.
-        sdf[!, col] = _shift_column(ts.coredata[!, col], -lead_value, n)
+    # Map `lead_value` to a (negative) shift `k` without ever evaluating
+    # `-lead_value` on a value that would overflow (e.g. `typemin(Int)`).
+    # When `abs(lead_value) >= n` we already know the answer is fully clamped,
+    # so we never reach the negation branch with an overflow-prone value.
+    k = if lead_value >= n
+        -n
+    elseif lead_value <= -n
+        n
+    else
+        -lead_value  # safe: |lead_value| < n, so the negation cannot overflow
     end
-    _wrap_with_index(sdf, index(ts))
+    _shift_tsframe(ts, k, n)
 end
