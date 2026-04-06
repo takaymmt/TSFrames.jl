@@ -2,6 +2,8 @@ module TSFrames
 
 using DataFrames, Dates, ShiftedArrays, RecipesBase, RollingFunctions, Tables
 
+import Statistics
+
 import Base.diff
 import Base.first
 import Base.getindex

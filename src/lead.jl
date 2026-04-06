@@ -80,6 +80,15 @@ julia> lead(ts, 2)[1:10]     # leads by 2 values
 ```
 """
 function lead(ts::TSFrame, lead_value::Int = 1)
-    sdf = DataFrame(ShiftedArrays.lead.(eachcol(ts.coredata[!, Not(:Index)]), lead_value), TSFrames.names(ts))
+    isempty(index(ts)) && return TSFrame(copy(ts.coredata))
+
+    n = TSFrames.nrow(ts)
+    col_names = TSFrames.names(ts)
+    sdf = DataFrame()
+    for col in col_names
+        # lead by k is identical to lag by -k; reuse the type-barrier helper
+        # defined in lag.jl so both functions share one optimised loop.
+        sdf[!, col] = _shift_column(ts.coredata[!, col], -lead_value, n)
+    end
     _wrap_with_index(sdf, index(ts))
 end

@@ -113,3 +113,10 @@ end
     expected_index = collect(DateTime(2020, 1, 1):Hour(6):DateTime(2020, 1, 3))
     @test length(result) == length(expected_index)
 end
+
+# -- 7. Empty TSFrame guard ----------------------------------------------------
+
+@testset "upsample empty guard" begin
+    empty_ts = TSFrame(DataFrame(A=Float64[], Index=Date[]))
+    @test TSFrames.nrow(upsample(empty_ts, Day(1))) == 0
+end

@@ -294,6 +294,9 @@ function Base.join(
     ts...;
     jointype::Symbol=:JoinAll
 )
+    if !haskey(joinmap, jointype)
+        throw(ArgumentError("Invalid join type: $jointype"))
+    end
     result = joinmap[jointype](ts1.coredata, ts2.coredata, on=:Index, makeunique=true)
     for tsf in ts
         result = joinmap[jointype](result, tsf.coredata, on=:Index, makeunique=true)

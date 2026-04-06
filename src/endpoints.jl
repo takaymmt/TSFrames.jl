@@ -280,7 +280,7 @@ julia> datetimesecondsrandom[endpoints(datetimesecondsrandom, Hour(1))]
 """
 function endpoints(values::AbstractVector, on::Function, k::Int=1)
     if (k <= 0)
-        throw(DomainError("`k` needs to be greater than 0"))
+        throw(DomainError(k, "`k` needs to be greater than 0"))
     end
 
     keys = on(values)
@@ -310,7 +310,7 @@ end
 
 function endpoints(timestamps::AbstractVector{T}, on::V)::Vector{Int} where {T<:Union{Date, DateTime, Time}, V<:Dates.Period}
     if (on.value <= 0)
-        throw(DomainError("`on.value` needs to be greater than 0"))
+        throw(DomainError(on.value, "`on.value` needs to be greater than 0"))
     end
     if (typeof(first(timestamps)) == Date && typeof(on) <: TimePeriod)
         throw(ArgumentError("Cannot find `TimePeriod` type inside a `Date` vector"))

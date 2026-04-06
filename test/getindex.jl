@@ -467,3 +467,54 @@ j = 10
 t = ts_long[:, j]
 @test typeof(t) <: Vector
 @test t == data_array_long[:, j]
+
+# Regression: scalar Date/DateTime lookup must throw KeyError when the date
+# is not present in the index (previously silently returned an adjacent row).
+let
+    ts_gap = TSFrame(DataFrame(
+        Index = [Date(2020, 1, 1), Date(2020, 1, 3), Date(2020, 1, 5)],
+        A     = [1, 2, 3],
+    ))
+
+    # Scalar TimeType: missing date in the middle, before, and after
+    @test_throws KeyError ts_gap[Date(2020, 1, 2)]
+    @test_throws KeyError ts_gap[Date(2019, 12, 31)]
+    @test_throws KeyError ts_gap[Date(2020, 1, 6)]
+
+    # Scalar TimeType x Symbol/String column name
+    @test_throws KeyError ts_gap[Date(2020, 1, 2), :A]
+    @test_throws KeyError ts_gap[Date(2020, 1, 2), "A"]
+    @test_throws KeyError ts_gap[Date(2020, 1, 6), :A]
+
+    # Scalar TimeType x Int column index
+    @test_throws KeyError ts_gap[Date(2020, 1, 2), 1]
+    @test_throws KeyError ts_gap[Date(2020, 1, 6), 1]
+
+    # Scalar TimeType x AbstractVector column selectors
+    @test_throws KeyError ts_gap[Date(2020, 1, 2), [1]]
+    @test_throws KeyError ts_gap[Date(2020, 1, 2), [:A]]
+    @test_throws KeyError ts_gap[Date(2020, 1, 2), ["A"]]
+
+    # String date dispatch must also throw KeyError for missing dates
+    @test_throws KeyError ts_gap["2020-01-02"]
+    @test_throws KeyError ts_gap["2020-01-06"]
+
+    # Sanity: existing dates still work
+    @test ts_gap[Date(2020, 1, 3), :A] == 2
+    @test ts_gap[Date(2020, 1, 3), "A"] == 2
+    @test ts_gap[Date(2020, 1, 3), 1] == 2
+    @test TSFrames.index(ts_gap[Date(2020, 1, 3)]) == [Date(2020, 1, 3)]
+    @test TSFrames.index(ts_gap["2020-01-03"]) == [Date(2020, 1, 3)]
+end
+
+# Regression: DateTime scalar lookup with hourly index must also throw KeyError
+let
+    ts_dt = TSFrame(DataFrame(
+        Index = [DateTime(2020, 1, 1, 0), DateTime(2020, 1, 1, 2), DateTime(2020, 1, 1, 4)],
+        A     = [10, 20, 30],
+    ))
+    @test_throws KeyError ts_dt[DateTime(2020, 1, 1, 1)]
+    @test_throws KeyError ts_dt[DateTime(2020, 1, 1, 1), :A]
+    @test_throws KeyError ts_dt[DateTime(2020, 1, 1, 1), 1]
+    @test ts_dt[DateTime(2020, 1, 1, 2), :A] == 20
+end

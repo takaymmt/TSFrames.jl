@@ -46,7 +46,7 @@ independently using methods provided by the DataFrames package
 # Constructors
 ```julia
 TSFrame(coredata::DataFrame, index::Union{String, Symbol, Int}; issorted = false, copycols = true)
-TSFrame(coredata::DataFrame, index::AbstractVector{T}; issorted = false, copycols = true) where {T<:Union{Int, TimeType}}
+TSFrame(coredata::DataFrame, index::AbstractVector{T}; issorted = false, copycols = true) where {T<:Union{Integer, TimeType}}
 TSFrame(coredata::DataFrame; issorted = false, copycols = true)
 TSFrame(coredata::DataFrame, index::UnitRange{Int}; issorted = false, copycols = true)
 TSFrame(coredata::AbstractVector{T}, index::AbstractVector{V}; colnames=:auto, issorted = false, copycols = true) where {T, V}
@@ -340,8 +340,8 @@ struct TSFrame
 
     # From DataFrame, index number/name/symbol
     function TSFrame(coredata::DataFrame, index::Union{String, Symbol, Int}; issorted = false, copycols = true)
-        if ! (eltype(coredata[!, index]) <: Union{Int, TimeType})
-            throw(ArgumentError("only Int and TimeType index is supported"))
+        if ! (eltype(coredata[!, index]) <: Union{Integer, TimeType})
+            throw(ArgumentError("only Integer and TimeType index is supported"))
         end
 
         sorted_cd = issorted ? (copycols ? copy(coredata) : coredata) : sort(coredata, index)
@@ -358,7 +358,7 @@ struct TSFrame
     end
 
     # From DataFrame, external index
-    function TSFrame(coredata::DataFrame, index::AbstractVector{T}; issorted = false, copycols = true) where {T<:Union{Int, TimeType}}
+    function TSFrame(coredata::DataFrame, index::AbstractVector{T}; issorted = false, copycols = true) where {T<:Union{Integer, TimeType}}
         if issorted
             sorted_index = copycols ? copy(index) : index
             cd = copy(coredata)

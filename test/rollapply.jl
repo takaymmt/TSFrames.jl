@@ -102,3 +102,50 @@ end
     @test mc_roll[:, :rolling_p_maximum] ≈ Float64.(2:mc_size)
     @test mc_roll[:, :rolling_q_maximum] ≈ Float64.(12:10+mc_size)
 end
+
+# Empty TSFrame should be returned unchanged.
+@testset "rollapply empty TSFrame" begin
+    empty_ts = TSFrame(Float64[], Date[])
+    out = rollapply(empty_ts, Statistics.mean, 3)
+    @test TSFrames.nrow(out) == 0
+end
+
+# Oversized window should warn and clamp to nrow(ts).
+@testset "rollapply windowsize > nrow warns and clamps" begin
+    small_size = 5
+    small_dates = Date(2020, 1, 1):Day(1):Date(2020, 1, small_size) |> collect
+    small_ts = TSFrame(Float64.(collect(1:small_size)), small_dates)
+    clamped = (@test_logs (:warn, r"exceeds nrow") rollapply(small_ts, Statistics.mean, 10))
+    @test length(clamped) == 1
+    @test clamped[1, :rolling_x1_mean] ≈ Statistics.mean(1.0:5.0)
+    @test index(clamped) == [small_dates[end]]
+end
+
+# Sanity check: fast-path results match a naive per-window reference.
+@testset "rollapply fast path equals naive reference" begin
+    n = 200
+    naive_dates = Date(2020, 1, 1):Day(1):Date(2020, 1, 1) + Day(n - 1) |> collect
+    vals = Float64.(collect(1:n)) .+ 0.5
+    naive_ts = TSFrame(vals, naive_dates)
+    w = 7
+    fast_mean = rollapply(naive_ts, Statistics.mean, w)
+    fast_std  = rollapply(naive_ts, Statistics.std,  w)
+    fast_var  = rollapply(naive_ts, Statistics.var,  w)
+    fast_sum  = rollapply(naive_ts, sum,            w)  # routed via generic rolling()
+    fast_max  = rollapply(naive_ts, maximum,        w)
+    fast_min  = rollapply(naive_ts, minimum,        w)
+
+    ref_mean = [Statistics.mean(vals[i:i+w-1]) for i in 1:n-w+1]
+    ref_std  = [Statistics.std(vals[i:i+w-1])  for i in 1:n-w+1]
+    ref_var  = [Statistics.var(vals[i:i+w-1])  for i in 1:n-w+1]
+    ref_sum  = [sum(vals[i:i+w-1])              for i in 1:n-w+1]
+    ref_max  = [maximum(vals[i:i+w-1])          for i in 1:n-w+1]
+    ref_min  = [minimum(vals[i:i+w-1])          for i in 1:n-w+1]
+
+    @test fast_mean[:, :rolling_x1_mean]    ≈ ref_mean
+    @test fast_std[:, :rolling_x1_std]      ≈ ref_std
+    @test fast_var[:, :rolling_x1_var]      ≈ ref_var
+    @test fast_sum[:, :rolling_x1_sum]      ≈ ref_sum
+    @test fast_max[:, :rolling_x1_maximum]  ≈ ref_max
+    @test fast_min[:, :rolling_x1_minimum]  ≈ ref_min
+end

@@ -139,14 +139,28 @@ julia> subset(ts,Date("2022-9-27"),:)
 
 """
 function subset(ts::TSFrame, from::T, to::T) where {T<:Union{Int, TimeType}}
-    TSFrame(DataFrames.subset(ts.coredata, :Index => x -> from .<= x .<= to))
+    idx = index(ts)
+    isempty(idx) && return TSFrame(ts.coredata[1:0, :])
+    # Index is sorted: O(log n) binary search instead of O(n) linear scan
+    i1 = searchsortedfirst(idx, from)  # first position with idx[i] >= from
+    i2 = searchsortedlast(idx, to)     # last position with idx[i] <= to
+    i1 > i2 && return TSFrame(ts.coredata[1:0, :])
+    return TSFrame(ts.coredata[i1:i2, :])
 end
 
 
 function subset(ts::TSFrame, ::Colon, to::T) where {T<:Union{Int, TimeType}}
-    TSFrame(DataFrames.subset(ts.coredata, :Index => x -> x .<= to))
+    idx = index(ts)
+    isempty(idx) && return TSFrame(ts.coredata[1:0, :])
+    i2 = searchsortedlast(idx, to)
+    i2 < 1 && return TSFrame(ts.coredata[1:0, :])
+    return TSFrame(ts.coredata[1:i2, :])
 end
 
 function subset(ts::TSFrame, from::T, ::Colon) where {T<:Union{Int, TimeType}}
-    TSFrame(DataFrames.subset(ts.coredata, :Index => x -> x .>= from))
+    idx = index(ts)
+    isempty(idx) && return TSFrame(ts.coredata[1:0, :])
+    i1 = searchsortedfirst(idx, from)
+    i1 > length(idx) && return TSFrame(ts.coredata[1:0, :])
+    return TSFrame(ts.coredata[i1:end, :])
 end

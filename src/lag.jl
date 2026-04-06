@@ -72,6 +72,49 @@ julia> lag(ts, 2) # lags by 2 values
 ```
 """
 function lag(ts::TSFrame, lag_value::Int = 1)
-    sdf = DataFrame(ShiftedArrays.lag.(eachcol(ts.coredata[!, Not(:Index)]), lag_value), TSFrames.names(ts))
+    isempty(index(ts)) && return TSFrame(copy(ts.coredata))
+
+    n = TSFrames.nrow(ts)
+    col_names = TSFrames.names(ts)
+    sdf = DataFrame()
+    for col in col_names
+        sdf[!, col] = _shift_column(ts.coredata[!, col], lag_value, n)
+    end
     _wrap_with_index(sdf, index(ts))
+end
+
+# Internal helper: shift a column by `k` positions, filling vacated slots
+# with `missing`. Positive `k` shifts values down (lag); negative `k` shifts
+# values up (lead). Returns a fresh Vector{Union{Missing, eltype(v)}}.
+#
+# V<:AbstractVector forces Julia to specialise on the concrete column type, so
+# eltype(V) is statically known and the inner loops are type-stable with no
+# per-element boxing — same pattern as _alloc_and_fill_col in utils.jl.
+@inline function _shift_column(v::V, k::Int, n::Int) where {V<:AbstractVector}
+    T = Union{Missing, eltype(V)}
+    out = Vector{T}(undef, n)
+    if k == 0
+        @inbounds for i in 1:n
+            out[i] = v[i]
+        end
+    elseif k > 0
+        # lag: vacated slots [1:k] become missing, then out[k+1:n] = v[1:n-k]
+        kk = min(k, n)
+        @inbounds for i in 1:kk
+            out[i] = missing
+        end
+        @inbounds for i in 1:(n - kk)
+            out[i + kk] = v[i]
+        end
+    else
+        # lead: out[1:n+k] = v[1-k:n], then vacated slots [n+k+1:n] become missing
+        kk = min(-k, n)
+        @inbounds for i in 1:(n - kk)
+            out[i] = v[i + kk]
+        end
+        @inbounds for i in (n - kk + 1):n
+            out[i] = missing
+        end
+    end
+    return out
 end

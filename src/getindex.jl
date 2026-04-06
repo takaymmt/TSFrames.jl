@@ -262,11 +262,17 @@ end
 
 function Base.getindex(ts::TSFrame, dt::T, j::Int) where {T<:TimeType}
     idx = searchsortedfirst(index(ts), dt)
+    if idx > length(index(ts)) || index(ts)[idx] != dt
+        throw(KeyError(dt))
+    end
     ts.coredata[idx, j+1]
 end
 
 function Base.getindex(ts::TSFrame, dt::T, j::Union{String, Symbol}) where {T<:TimeType}
     idx = searchsortedfirst(index(ts), dt)
+    if idx > length(index(ts)) || index(ts)[idx] != dt
+        throw(KeyError(dt))
+    end
     ts.coredata[idx, j]
 end
 ###
@@ -282,11 +288,17 @@ end
 
 function Base.getindex(ts::TSFrame, dt::T, j::AbstractVector{Int}) where {T<:TimeType}
     idx = searchsortedfirst(index(ts), dt)
+    if idx > length(index(ts)) || index(ts)[idx] != dt
+        throw(KeyError(dt))
+    end
     ts[idx, j]
 end
 
 function Base.getindex(ts::TSFrame, dt::D, j::AbstractVector{T}) where {D<:TimeType, T<:Union{String, Symbol}}
     idx = searchsortedfirst(index(ts), dt)
+    if idx > length(index(ts)) || index(ts)[idx] != dt
+        throw(KeyError(dt))
+    end
     ts[idx, j]
 end
 ###
@@ -404,7 +416,11 @@ function Base.getindex(ts::TSFrame, dt::AbstractVector{T}) where {T<:TimeType}
 end
 
 function Base.getindex(ts::TSFrame, d::T) where {T<:TimeType}
-    ts[[d], 1:TSFrames.ncol(ts)]
+    idx = searchsortedfirst(index(ts), d)
+    if idx > length(index(ts)) || index(ts)[idx] != d
+        throw(KeyError(d))
+    end
+    ts[[idx], 1:TSFrames.ncol(ts)]
 end
 
 # By period
@@ -517,6 +533,9 @@ end
 function Base.getindex(ts::TSFrame, i::String)
     d::Date = Date(Dates.parse_components(i, Dates.dateformat"yyyy-mm-dd")...)
     first_idx = searchsortedfirst(index(ts), d)
+    if first_idx > length(index(ts)) || index(ts)[first_idx] != d
+        throw(KeyError(d))
+    end
     last_idx = searchsortedlast(index(ts), d)
     ts[first_idx:last_idx]
 end

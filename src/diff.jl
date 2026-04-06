@@ -76,8 +76,30 @@ julia> diff(ts, 3)[1:10]     # difference over the third row
 # Diff
 function diff(ts::TSFrame, periods::Int = 1)
     if periods <= 0
-        error("periods must be a postive int")
+        error("periods must be a positive int")
     end
-    ddf = ts.coredata[:, Not(:Index)] .- TSFrames.lag(ts, periods).coredata[:, Not(:Index)]
-    _wrap_with_index(ddf, index(ts))
+    isempty(index(ts)) && return TSFrame(copy(ts.coredata))
+
+    n = TSFrames.nrow(ts)
+    col_names = TSFrames.names(ts)
+    sdf = DataFrame()
+    for col in col_names
+        sdf[!, col] = _diff_column(ts.coredata[!, col], periods, n)
+    end
+    _wrap_with_index(sdf, index(ts))
+end
+
+# Internal helper: per-column discrete difference with leading `missing`
+# entries, parameterised on the column type so the inner loop is type-stable.
+@inline function _diff_column(v::V, periods::Int, n::Int) where {V<:AbstractVector}
+    T = Union{Missing, eltype(V)}
+    out = Vector{T}(undef, n)
+    kk = min(periods, n)
+    @inbounds for i in 1:kk
+        out[i] = missing
+    end
+    @inbounds for i in (periods + 1):n
+        out[i] = v[i] - v[i - periods]
+    end
+    return out
 end

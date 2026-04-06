@@ -71,6 +71,7 @@ DateTime             Float64?
 """
 
 function upsample(ts::TSFrame, period::T) where {T<:Union{DatePeriod, TimePeriod}}
+    isempty(index(ts)) && return ts
     dex = collect(first(index(ts)):period:last(index(ts)))
     join(ts, TSFrame(DataFrame(index = dex), :index))
 end
