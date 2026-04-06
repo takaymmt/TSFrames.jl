@@ -409,6 +409,32 @@ end
 
 # By period
 #
+# Helper: binary range search for period-based indexing.
+# Returns all rows where lo_dt <= Index < hi_exclusive_dt.
+# Adapts DateTime boundaries to the actual index element type (Date or DateTime).
+function _binary_period_range(ts::TSFrame, lo_dt::DateTime, hi_exclusive_dt::DateTime)
+    T = eltype(index(ts))
+    idx = index(ts)
+    lo = T === Date ? Date(lo_dt) : lo_dt
+    hi = T === Date ? Date(hi_exclusive_dt) : hi_exclusive_dt
+    first_idx = searchsortedfirst(idx, lo)
+    last_idx  = searchsortedfirst(idx, hi) - 1
+    ts[first_idx:last_idx]
+end
+
+# Helper: safe DateTime constructor that returns `nothing` when any component
+# is out of range. Used by period-based getindex methods so that out-of-range
+# queries (e.g. `Hour(25)`, `Month(13)`) return an empty TSFrame instead of
+# throwing an ArgumentError.
+function _safe_datetime(args::Int...)
+    try
+        return DateTime(args...)
+    catch e
+        e isa ArgumentError || rethrow()
+        return nothing
+    end
+end
+
 # Helper: filter rows where the tuple of period extractors applied to
 # the Index matches the given values.  Each extractor is the *type
 # constructor* used as a function (e.g. `Year`, `Month`).  Because the
@@ -422,16 +448,29 @@ function _filter_by_period(ts::TSFrame, extractors::Tuple, values::Tuple)
 end
 
 function Base.getindex(ts::TSFrame, y::Year)
-    _filter_by_period(ts, (Dates.Year,), (y,))
+    yv = Dates.value(y)
+    lo = _safe_datetime(yv, 1, 1)
+    lo === nothing && return ts[1:0]
+    hi = _safe_datetime(yv + 1, 1, 1)
+    hi === nothing && return ts[1:0]
+    _binary_period_range(ts, lo, hi)
 end
 
 function Base.getindex(ts::TSFrame, y::Year, q::Quarter)
-    _filter_by_period(ts, (Year, Quarter), (y, q))
+    yv = Dates.value(y)
+    qv = Dates.value(q)
+    m_start = (qv - 1) * 3 + 1
+    lo = _safe_datetime(yv, m_start, 1)
+    lo === nothing && return ts[1:0]
+    _binary_period_range(ts, lo, lo + Month(3))
 end
 
 # XXX: ideally, Dates.YearMonth class should exist
 function Base.getindex(ts::TSFrame, y::Year, m::Month)
-    _filter_by_period(ts, (Year, Month), (y, m))
+    yv = Dates.value(y); mv = Dates.value(m)
+    lo = _safe_datetime(yv, mv, 1)
+    lo === nothing && return ts[1:0]
+    _binary_period_range(ts, lo, lo + Month(1))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, w::Week)
@@ -439,23 +478,42 @@ function Base.getindex(ts::TSFrame, y::Year, m::Month, w::Week)
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, d::Day)
-    _filter_by_period(ts, (Year, Month, Day), (y, m, d))
+    yv = Dates.value(y); mv = Dates.value(m); dv = Dates.value(d)
+    lo = _safe_datetime(yv, mv, dv)
+    lo === nothing && return ts[1:0]
+    _binary_period_range(ts, lo, lo + Day(1))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, d::Day, h::Hour)
-    _filter_by_period(ts, (Year, Month, Day, Hour), (y, m, d, h))
+    yv = Dates.value(y); mv = Dates.value(m); dv = Dates.value(d)
+    hv = Dates.value(h)
+    lo = _safe_datetime(yv, mv, dv, hv)
+    lo === nothing && return ts[1:0]
+    _binary_period_range(ts, lo, lo + Hour(1))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, d::Day, h::Hour, min::Minute)
-    _filter_by_period(ts, (Year, Month, Day, Hour, Minute), (y, m, d, h, min))
+    yv = Dates.value(y); mv = Dates.value(m); dv = Dates.value(d)
+    hv = Dates.value(h); minv = Dates.value(min)
+    lo = _safe_datetime(yv, mv, dv, hv, minv)
+    lo === nothing && return ts[1:0]
+    _binary_period_range(ts, lo, lo + Minute(1))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, d::Day, h::Hour, min::Minute, sec::Second)
-    _filter_by_period(ts, (Year, Month, Day, Hour, Minute, Second), (y, m, d, h, min, sec))
+    yv = Dates.value(y); mv = Dates.value(m); dv = Dates.value(d)
+    hv = Dates.value(h); minv = Dates.value(min); secv = Dates.value(sec)
+    lo = _safe_datetime(yv, mv, dv, hv, minv, secv)
+    lo === nothing && return ts[1:0]
+    _binary_period_range(ts, lo, lo + Second(1))
 end
 
 function Base.getindex(ts::TSFrame, y::Year, m::Month, d::Day, h::Hour, min::Minute, sec::Second, ms::Millisecond)
-    _filter_by_period(ts, (Year, Month, Day, Hour, Minute, Second, Millisecond), (y, m, d, h, min, sec, ms))
+    yv = Dates.value(y); mv = Dates.value(m); dv = Dates.value(d)
+    hv = Dates.value(h); minv = Dates.value(min); secv = Dates.value(sec); msv = Dates.value(ms)
+    lo = _safe_datetime(yv, mv, dv, hv, minv, secv, msv)
+    lo === nothing && return ts[1:0]
+    _binary_period_range(ts, lo, lo + Millisecond(1))
 end
 
 # By string timestamp
