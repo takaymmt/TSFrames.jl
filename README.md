@@ -183,7 +183,7 @@ The benchmark tooling was redesigned for modularity and repeatability:
 
 - `benchmark/utils.jl` — shared utilities: `load_result`, `format_time`, `format_bytes`,
   `collect_leaves`, `navigate_leaf` (consolidated from previously duplicated code)
-- `benchmark/run.jl` — orchestrator: `--group`, `--save`, `--compare`, `--report`, `--tune`, `--verbose`
+- `benchmark/run.jl` — runner: `--group`, `--save`, `--report`, `--tune`, `--verbose`
 - `benchmark/analysis/compare.jl` — regression/improvement detection between two result files
 - `benchmark/analysis/report.jl` — Markdown report generation from one or more result files
 

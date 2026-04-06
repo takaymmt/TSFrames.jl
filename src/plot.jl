@@ -55,6 +55,12 @@ julia> # plot(ts, [1, 2], size=(600, 400));
 ```
 """
 @recipe function f(ts::TSFrame, cols::Vector{Int} = collect(1:TSFrames.ncol(ts)))
+    ncols = TSFrames.ncol(ts)
+    for c in cols
+        if c < 1 || c > ncols
+            throw(ArgumentError("Column index $c is out of range 1:$ncols"))
+        end
+    end
     seriestype := :line
     size --> (1200, 1200)
     xlabel --> :Index
@@ -66,6 +72,10 @@ end
 
 @recipe function f(ts::TSFrame, cols::Vector{T}) where {T<:Union{String, Symbol}}
     colindices = [DataFrames.columnindex(ts.coredata, i) for i in cols]
+    missing_idx = findfirst(==(0), colindices)
+    if missing_idx !== nothing
+        throw(ArgumentError("Column $(cols[missing_idx]) not found in TSFrame"))
+    end
     colindices .-= 1            # decrement to account for Index
     (ts, colindices)
 end

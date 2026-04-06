@@ -1,5 +1,5 @@
 #!/usr/bin/env julia
-# benchmark/run.jl — Benchmark orchestrator
+# benchmark/run.jl — Benchmark runner
 #
 # Usage:
 #   julia benchmark/run.jl [options]
@@ -8,7 +8,6 @@
 #   --save <path>              Save results to JSON file
 #   --desc <text>              Description for .meta.json sidecar
 #   --group <g1,g2,...>        Run specific benchmark groups only
-#   --compare <f1> <f2> ...   Compare multiple JSON result files
 #   --report <f1> <f2> ...    Generate Markdown report from JSON files
 #   --tune                     Tune benchmark parameters before running
 #   --verbose                  Show detailed progress
@@ -20,15 +19,14 @@
 #   # Run specific groups
 #   julia benchmark/run.jl --group resample_vs_to_period,apply --save benchmark/results/latest.json
 #
-#   # Compare 3 results
-#   julia benchmark/run.jl --compare baseline.json after_p1.json after_p2.json
-#
 #   # Generate report from multiple results
-#   julia benchmark/run.jl --report baseline.json after_p1.json after_p2.json
+#   julia benchmark/run.jl --report benchmark/results/v0.2.2.json benchmark/results/v0.3.5.json
+#
+# To compare two JSON result files:
+#   julia benchmark/analysis/compare.jl baseline.json latest.json
 
 using Dates
 using BenchmarkTools
-using Statistics
 
 include(joinpath(@__DIR__, "utils.jl"))
 
@@ -38,7 +36,6 @@ function parse_args(args)
     config = Dict{Symbol, Any}(
         :save     => nothing,
         :groups   => nothing,
-        :compare  => nothing,
         :report   => nothing,
         :tune     => false,
         :verbose  => false,
@@ -54,15 +51,6 @@ function parse_args(args)
         elseif arg == "--group"
             i += 1
             config[:groups] = split(args[i], ",")
-        elseif arg == "--compare"
-            files = String[]
-            i += 1
-            while i <= length(args) && !startswith(args[i], "--")
-                push!(files, args[i])
-                i += 1
-            end
-            config[:compare] = files
-            continue  # skip i += 1 at end
         elseif arg == "--report"
             files = String[]
             i += 1
@@ -227,69 +215,6 @@ function save_results(results, path::String; description::String="")
 end
 
 
-# ── Compare Mode ─────────────────────────────────────────────────────────────
-
-function run_compare(files)
-    if length(files) < 2
-        error("Compare requires at least 2 files. Got: $(length(files))")
-    end
-
-    log_msg("Loading $(length(files)) result files for comparison...")
-
-    results = []
-    labels = String[]
-    for f in files
-        push!(results, load_result(f))
-        push!(labels, basename(f))
-    end
-
-    baseline = results[1]
-    baseline_label = labels[1]
-
-    println("\n", "="^70)
-    println("  Benchmark Comparison")
-    println("  Baseline: $baseline_label")
-    println("="^70)
-
-    for idx in 2:length(results)
-        judgment = judge(minimum(results[idx]), minimum(baseline))
-        println("\n--- $(labels[idx]) vs $baseline_label ---")
-        print_judgment_summary(judgment)
-    end
-end
-
-function print_judgment_summary(judgment)
-    improvements = 0
-    regressions = 0
-    invariant_count = 0
-
-    for_each_leaf(judgment) do path, trial
-        if isimprovement(trial)
-            improvements += 1
-            println("  $(rpad(path, 50)) IMPROVEMENT")
-        elseif isregression(trial)
-            regressions += 1
-            println("  $(rpad(path, 50)) REGRESSION")
-        else
-            invariant_count += 1
-        end
-    end
-
-    println("\n  Summary: $improvements improvements, $regressions regressions, $invariant_count invariant")
-end
-
-function for_each_leaf(f, bg, prefix="")
-    for k in sort(collect(keys(bg)))
-        full = isempty(prefix) ? string(k) : "$prefix/$k"
-        child = bg[k]
-        if child isa BenchmarkTools.BenchmarkGroup
-            for_each_leaf(f, child, full)
-        else
-            f(full, child)
-        end
-    end
-end
-
 # ── Report Mode ──────────────────────────────────────────────────────────────
 
 function run_report(files)
@@ -308,9 +233,7 @@ function main()
     config = parse_args(ARGS)
     _verbose[] = config[:verbose]
 
-    if config[:compare] !== nothing
-        run_compare(config[:compare])
-    elseif config[:report] !== nothing
+    if config[:report] !== nothing
         run_report(config[:report])
     else
         run_benchmarks(config)

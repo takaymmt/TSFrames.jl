@@ -100,3 +100,7 @@ end
 @testset "Irregular time series" begin
     include("irregular_timeseries.jl")
 end
+
+@testset "plot()" begin
+    include("plot.jl")
+end

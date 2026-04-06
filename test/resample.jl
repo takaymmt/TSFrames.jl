@@ -1351,3 +1351,250 @@ end
     expected = jan_val + frac * (mar_val - jan_val)
     @test feb_val ≈ expected
 end
+
+# -- G. Additional edge cases --------------------------------------------------
+# These tests cover edge conditions that the existing suite does not yet exercise:
+#   1. Single-row TSFrame with a period larger than the row span
+#   2. Float32 columns across all fill strategies (type preservation)
+#   3. All-missing columns (ffill/bfill stay missing, zero fills only gap rows)
+#   4. fill_limit=0 — ArgumentError (not a positive integer)
+#   5. fill_limit negative — ArgumentError
+
+@testset "resample edge cases" begin
+    # ── 1. Single-row TSFrame with various periods ──────────────────────────
+    @testset "Single-row TSFrame — multiple period types" begin
+        # Single row with Year period — output must have exactly one row
+        ts_single_year = TSFrame(
+            DataFrame(Open=[10.0], High=[12.0], Low=[9.0], Close=[11.0], Volume=[500]),
+            [Date(2020, 6, 15)],
+        )
+        result_year = resample(ts_single_year, Year(1))
+        @test DataFrames.nrow(result_year.coredata) == 1
+        @test result_year[:, :Open][1] == 10.0
+        @test result_year[:, :High][1] == 12.0
+        @test result_year[:, :Low][1] == 9.0
+        @test result_year[:, :Close][1] == 11.0
+        @test result_year[:, :Volume][1] == 500
+
+        # Single row with Month period — custom Symbol pairs
+        result_month = resample(ts_single_year, Month(1), :Open => first, :Volume => sum)
+        @test DataFrames.nrow(result_month.coredata) == 1
+        @test result_month[:, :Open][1] == 10.0
+        @test result_month[:, :Volume][1] == 500
+
+        # Single row with fill_gaps=:ffill — no gap to fill, still 1 row
+        result_ff = resample(ts_single_year, Month(1); fill_gaps=:ffill)
+        @test DataFrames.nrow(result_ff.coredata) == 1
+        @test !ismissing(result_ff[:, :Open][1])
+    end
+
+    # ── 2. Float32 columns — type preservation across fill strategies ───────
+    @testset "Float32 column with fill_gaps strategies" begin
+        # Jan and Mar data, Feb gap
+        dates_f32 = vcat(
+            collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+            collect(Date(2020,3,1):Day(1):Date(2020,3,31)),
+        )
+        n_f32 = length(dates_f32)
+        ts_f32 = TSFrame(DataFrame(val = Float32.(1:n_f32)), dates_f32)
+
+        # :ffill — Feb filled from Jan's aggregated value; eltype stays Float32
+        r_ffill = resample(ts_f32, Month(1), :val => first; fill_gaps=:ffill)
+        @test nonmissingtype(eltype(r_ffill.coredata[!, :val])) == Float32
+        feb_ff = findfirst(==(Date(2020,2,1)), index(r_ffill))
+        @test feb_ff !== nothing
+        @test !ismissing(r_ffill.coredata[feb_ff, :val])
+        @test r_ffill.coredata[feb_ff, :val] isa Float32
+
+        # :bfill — Feb filled from Mar's aggregated value
+        r_bfill = resample(ts_f32, Month(1), :val => first; fill_gaps=:bfill)
+        @test nonmissingtype(eltype(r_bfill.coredata[!, :val])) == Float32
+        feb_bf = findfirst(==(Date(2020,2,1)), index(r_bfill))
+        @test feb_bf !== nothing
+        @test !ismissing(r_bfill.coredata[feb_bf, :val])
+        @test r_bfill.coredata[feb_bf, :val] isa Float32
+
+        # :zero — Feb filled with Float32(0)
+        r_zero = resample(ts_f32, Month(1), :val => first; fill_gaps=:zero)
+        @test nonmissingtype(eltype(r_zero.coredata[!, :val])) == Float32
+        feb_z = findfirst(==(Date(2020,2,1)), index(r_zero))
+        @test feb_z !== nothing
+        @test r_zero.coredata[feb_z, :val] === Float32(0)
+
+        # :interpolate — Feb interpolated with Float32 result
+        r_interp = resample(ts_f32, Month(1), :val => first; fill_gaps=:interpolate)
+        @test nonmissingtype(eltype(r_interp.coredata[!, :val])) == Float32
+        feb_ip = findfirst(==(Date(2020,2,1)), index(r_interp))
+        @test feb_ip !== nothing
+        @test !ismissing(r_interp.coredata[feb_ip, :val])
+        @test r_interp.coredata[feb_ip, :val] isa Float32
+    end
+
+    # ── 3. All-missing column ───────────────────────────────────────────────
+    @testset "All-missing column with fill_gaps" begin
+        dates_am = vcat(
+            collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+            collect(Date(2020,3,1):Day(1):Date(2020,3,31)),
+        )
+        n_am = length(dates_am)
+        # Column that is entirely missing
+        vals_am = Vector{Union{Missing, Float64}}(missing, n_am)
+        ts_am = TSFrame(DataFrame(val = vals_am), dates_am)
+
+        # :ffill — nothing to ffill from, all rows stay missing
+        r_ff = resample(ts_am, Month(1), :val => first; fill_gaps=:ffill)
+        for i in 1:DataFrames.nrow(r_ff.coredata)
+            @test ismissing(r_ff.coredata[i, :val])
+        end
+
+        # :bfill — nothing to bfill from, all rows stay missing
+        r_bf = resample(ts_am, Month(1), :val => first; fill_gaps=:bfill)
+        for i in 1:DataFrames.nrow(r_bf.coredata)
+            @test ismissing(r_bf.coredata[i, :val])
+        end
+
+        # :zero — only inserted gap rows are filled with 0.0.
+        # Pre-existing missing values from aggregation remain missing.
+        r_z = resample(ts_am, Month(1), :val => first; fill_gaps=:zero)
+        feb_idx_z = findfirst(==(Date(2020,2,1)), index(r_z))
+        @test feb_idx_z !== nothing
+        @test r_z.coredata[feb_idx_z, :val] == 0.0
+        # Non-gap rows (Jan, Mar) originated from aggregating all-missing data,
+        # so they stay missing (zero-fill only touches gap rows).
+        jan_idx_z = findfirst(==(Date(2020,1,1)), index(r_z))
+        @test jan_idx_z !== nothing
+        @test ismissing(r_z.coredata[jan_idx_z, :val])
+    end
+
+    # ── 4. fill_limit=0 — rejected with ArgumentError ───────────────────────
+    @testset "fill_limit=0 raises ArgumentError" begin
+        dates_fl = vcat(
+            collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+            collect(Date(2020,3,1):Day(1):Date(2020,3,31)),
+        )
+        ts_fl = TSFrame(DataFrame(val = Float64.(1:length(dates_fl))), dates_fl)
+
+        # Default (OHLCV) path — requires OHLCV columns, use explicit pairs instead
+        @test_throws ArgumentError resample(
+            ts_fl, Month(1), :val => first; fill_gaps=:ffill, fill_limit=0,
+        )
+        @test_throws ArgumentError resample(
+            ts_fl, Month(1), :val => first; fill_gaps=:bfill, fill_limit=0,
+        )
+
+        # String-pair path — same validation applies
+        @test_throws ArgumentError resample(
+            ts_fl, Month(1), "val" => first; fill_gaps=:ffill, fill_limit=0,
+        )
+
+        # Default OHLCV path — needs OHLCV columns to reach fill_limit validation
+        ts_ohlcv_fl = TSFrame(
+            DataFrame(
+                Open   = Float64.(1:length(dates_fl)),
+                High   = Float64.(1:length(dates_fl)) .+ 1,
+                Low    = Float64.(1:length(dates_fl)) .- 1,
+                Close  = Float64.(1:length(dates_fl)),
+                Volume = Int.(1:length(dates_fl)),
+            ),
+            dates_fl,
+        )
+        @test_throws ArgumentError resample(
+            ts_ohlcv_fl, Month(1); fill_gaps=:ffill, fill_limit=0,
+        )
+    end
+
+    # ── 5. fill_limit negative — rejected with ArgumentError ────────────────
+    @testset "fill_limit negative raises ArgumentError" begin
+        dates_neg = vcat(
+            collect(Date(2020,1,1):Day(1):Date(2020,1,31)),
+            collect(Date(2020,3,1):Day(1):Date(2020,3,31)),
+        )
+        ts_neg = TSFrame(DataFrame(val = Float64.(1:length(dates_neg))), dates_neg)
+
+        @test_throws ArgumentError resample(
+            ts_neg, Month(1), :val => first; fill_gaps=:ffill, fill_limit=-1,
+        )
+        @test_throws ArgumentError resample(
+            ts_neg, Month(1), :val => first; fill_gaps=:bfill, fill_limit=-5,
+        )
+        @test_throws ArgumentError resample(
+            ts_neg, Month(1), "val" => first; fill_gaps=:ffill, fill_limit=-10,
+        )
+    end
+
+    # ── 6. fill_limit=1 boundary: exactly 1 consecutive gap row filled ──────
+    @testset "fill_limit=1 boundary — fills 1 gap, leaves next missing" begin
+        # Jan 15 → Apr 15, so Feb and Mar are two consecutive calendar gaps.
+        dates_b = [Date(2020, 1, 15), Date(2020, 4, 15)]
+        ts_b = TSFrame(DataFrame(val = [10.0, 20.0]), dates_b)
+
+        # fill_limit=1 — only Feb (1st gap) filled; Mar (2nd gap) stays missing.
+        r1 = resample(ts_b, Month(1), :val => first; fill_gaps=:ffill, fill_limit=1)
+        feb_i = findfirst(==(Date(2020, 2, 1)), index(r1))
+        mar_i = findfirst(==(Date(2020, 3, 1)), index(r1))
+        @test feb_i !== nothing
+        @test mar_i !== nothing
+        @test !ismissing(r1.coredata[feb_i, :val])
+        @test r1.coredata[feb_i, :val] == 10.0
+        @test ismissing(r1.coredata[mar_i, :val])
+
+        # fill_limit=2 — both Feb and Mar filled.
+        r2 = resample(ts_b, Month(1), :val => first; fill_gaps=:ffill, fill_limit=2)
+        feb_i2 = findfirst(==(Date(2020, 2, 1)), index(r2))
+        mar_i2 = findfirst(==(Date(2020, 3, 1)), index(r2))
+        @test feb_i2 !== nothing
+        @test mar_i2 !== nothing
+        @test !ismissing(r2.coredata[feb_i2, :val])
+        @test !ismissing(r2.coredata[mar_i2, :val])
+        @test r2.coredata[feb_i2, :val] == 10.0
+        @test r2.coredata[mar_i2, :val] == 10.0
+    end
+
+    # ── 7. Float32 value assertions (not just eltype) ───────────────────────
+    @testset "Float32 fill_gaps — value correctness" begin
+        # 2-point TSFrame with 1-month gap so expected values are trivial.
+        dates_fv = [Date(2020, 1, 15), Date(2020, 3, 15)]
+        ts_fv = TSFrame(DataFrame(val = Float32[10.0, 30.0]), dates_fv)
+
+        # :ffill — Feb row must equal Jan's aggregated value (10.0f0).
+        r_ff = resample(ts_fv, Month(1), :val => first; fill_gaps=:ffill)
+        feb_ff = findfirst(==(Date(2020, 2, 1)), index(r_ff))
+        @test feb_ff !== nothing
+        @test r_ff.coredata[feb_ff, :val] === Float32(10.0)
+
+        # :bfill — Feb row must equal Mar's aggregated value (30.0f0).
+        r_bf = resample(ts_fv, Month(1), :val => first; fill_gaps=:bfill)
+        feb_bf = findfirst(==(Date(2020, 2, 1)), index(r_bf))
+        @test feb_bf !== nothing
+        @test r_bf.coredata[feb_bf, :val] === Float32(30.0)
+
+        # :zero — Feb row must be exactly 0.0f0 (Float32-typed).
+        r_z = resample(ts_fv, Month(1), :val => first; fill_gaps=:zero)
+        feb_z = findfirst(==(Date(2020, 2, 1)), index(r_z))
+        @test feb_z !== nothing
+        @test r_z.coredata[feb_z, :val] === Float32(0.0)
+    end
+
+    # ── 8. :interpolate on all-missing column — graceful skip ───────────────
+    @testset ":interpolate on all-missing column" begin
+        # Entire column is missing: interpolation has no anchors to work from.
+        # Verified behavior: all rows (including inserted gap rows) remain missing,
+        # no error is thrown.
+        dates_im = vcat(
+            collect(Date(2020, 1, 1):Day(1):Date(2020, 1, 31)),
+            collect(Date(2020, 3, 1):Day(1):Date(2020, 3, 31)),
+        )
+        n_im = length(dates_im)
+        vals_im = Vector{Union{Missing, Float64}}(missing, n_im)
+        ts_im = TSFrame(DataFrame(val = vals_im), dates_im)
+
+        r_im = resample(ts_im, Month(1), :val => first; fill_gaps=:interpolate)
+        # Feb gap row must exist
+        feb_im = findfirst(==(Date(2020, 2, 1)), index(r_im))
+        @test feb_im !== nothing
+        # Every row stays missing — :interpolate has no anchors.
+        for i in 1:DataFrames.nrow(r_im.coredata)
+            @test ismissing(r_im.coredata[i, :val])
+        end
+    end
+end
