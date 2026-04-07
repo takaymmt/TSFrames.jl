@@ -42,3 +42,12 @@ tstimestamps = TSFrame(random(length(timestamps)), timestamps);
 
 @test to_nanoseconds(tstimestamps, 1) == tstimestamps
 @test to_nanoseconds(tstimestamps, 2) == tstimestamps[endpoints(tstimestamps, Nanosecond(2))]
+
+@testset "to_period n=0 ArgumentError" begin
+    ts = TSFrame(DataFrame(Index=Date.(2020, 1, 1:5), val=1.0:5.0))
+    @test_throws ArgumentError to_monthly(ts, 0)
+    @test_throws ArgumentError to_yearly(ts, 0)
+    @test_throws ArgumentError to_quarterly(ts, 0)
+    @test_throws ArgumentError to_weekly(ts, 0)
+    @test_throws ArgumentError to_daily(ts, 0)
+end

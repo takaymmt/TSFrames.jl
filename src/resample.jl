@@ -206,6 +206,8 @@ function _apply_ffill_gaps!(v::AbstractVector, is_gap::AbstractVector{Bool}, lim
             end
         elseif !is_gap[i]
             consec = 0  # reset on real (non-gap) data points
+        else  # is_gap[i] && !ismissing(v[i]): gap row already has value, reset run
+            consec = 0
         end
     end
 end
@@ -222,6 +224,8 @@ function _apply_bfill_gaps!(v::AbstractVector, is_gap::AbstractVector{Bool}, lim
                 end
             end
         elseif !is_gap[i]
+            consec = 0
+        else  # is_gap[i] && !ismissing(v[i]): gap row already has value, reset run
             consec = 0
         end
     end
@@ -328,7 +332,7 @@ end
 
 # Build gap rows, widen result columns to Union{Missing,T}, and return sorted combined DataFrame.
 # Result columns are fresh allocations from _resample_core, safe to mutate in-place.
-function _insert_gap_rows(result::TSFrame, gap_labels::AbstractVector)
+function _insert_gap_rows!(result::TSFrame, gap_labels::AbstractVector)
     gap_df = DataFrame(:Index => gap_labels)
     for col in names(result.coredata, Not(:Index))
         col_T = eltype(result.coredata[!, col])
@@ -364,6 +368,21 @@ function _apply_fill_to_gaps!(combined::DataFrame, gap_labels::AbstractVector,
     gap_label_set = Set(gap_labels)
     idx_vec = combined[!, :Index]
     is_gap = [idx_vec[i] in gap_label_set for i in 1:size(combined, 1)]
+
+    # Pre-flight type validation for constant fill to avoid mid-mutation crash
+    if effective isa Real
+        for col in names(combined, Not(:Index))
+            v = combined[!, col]
+            col_T = nonmissingtype(eltype(v))
+            try
+                convert(col_T, effective)
+            catch
+                throw(ArgumentError(
+                    "fill_gaps: cannot fill column `$col` (element type $col_T) with value $effective"
+                ))
+            end
+        end
+    end
 
     for col in names(combined, Not(:Index))
         v = combined[!, col]
@@ -404,7 +423,7 @@ function _fill_period_gaps(
     gap_labels = _detect_gap_labels(idx, period, index_at)
     isempty(gap_labels) && return result
 
-    combined = _insert_gap_rows(result, gap_labels)
+    combined = _insert_gap_rows!(result, gap_labels)
     effective = _normalize_fill_strategy(fill_strategy)
     _apply_fill_to_gaps!(combined, gap_labels, effective, fill_limit)
 

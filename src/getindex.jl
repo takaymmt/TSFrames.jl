@@ -521,7 +521,8 @@ end
 
 # By string timestamp
 function Base.getindex(ts::TSFrame, i::String)
-    d::Date = Date(Dates.parse_components(i, Dates.dateformat"yyyy-mm-dd")...)
+    d_date = Date(Dates.parse_components(i, Dates.dateformat"yyyy-mm-dd")...)
+    d = eltype(index(ts)) <: DateTime ? DateTime(d_date) : d_date
     first_idx = _exact_index_or_throw(ts, d)
     last_idx = searchsortedlast(index(ts), d)
     ts[first_idx:last_idx]

@@ -527,3 +527,16 @@ end
     result = ts[[Date(2020,1,1), Date(2020,1,3)]]
     @test TSFrames.nrow(result) == 2
 end
+
+# String getindex on DateTime-indexed TSFrame (MED-C1 regression)
+@testset "String getindex on DateTime index" begin
+    dt_idx = [DateTime(2007, 1, 1), DateTime(2007, 1, 2), DateTime(2007, 1, 3)]
+    ts_dt = TSFrame(DataFrame(Index=dt_idx, val=[1.0, 2.0, 3.0]))
+    result = ts_dt["2007-01-01"]
+    @test TSFrames.nrow(result) == 1
+    @test result[1, :val] == 1.0
+    result2 = ts_dt["2007-01-02"]
+    @test TSFrames.nrow(result2) == 1
+    @test result2[1, :val] == 2.0
+    @test_throws KeyError ts_dt["2007-01-05"]
+end

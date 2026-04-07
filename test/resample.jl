@@ -1605,3 +1605,11 @@ end
     @test_throws ArgumentError resample(ts_time, Dates.Minute(60); fill_gaps=true)
     @test_throws ArgumentError resample(ts_time, Dates.Minute(60), :val => sum; fill_gaps=true)
 end
+
+@testset "fill_gaps constant fill type mismatch" begin
+    ts = TSFrame(DataFrame(
+        Index   = Date.(2020, 1, [1, 3, 5]),
+        str_col = ["a", "b", "c"],
+    ))
+    @test_throws ArgumentError resample(ts, Day(1); fill_gaps=0)
+end

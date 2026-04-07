@@ -95,3 +95,10 @@ end
     # from > to returns empty
     @test TSFrames.nrow(TSFrames.subset(ts_sparse, 5, 2)) == 0
 end
+
+@testset "subset type mismatch ArgumentError" begin
+    date_ts = TSFrame(DataFrame(Index=Date.(2020, 1, 1:5), val=1.0:5.0))
+    @test_throws ArgumentError TSFrames.subset(date_ts, 1, 3)
+    @test_throws ArgumentError TSFrames.subset(date_ts, :, 3)
+    @test_throws ArgumentError TSFrames.subset(date_ts, 1, :)
+end
