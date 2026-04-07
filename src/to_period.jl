@@ -40,7 +40,7 @@ for (fname, PType) in [
     (:to_microseconds, :Microsecond),
     (:to_nanoseconds,  :Nanosecond)
 ]
-    @eval function $fname(tsf::TSFrame, n=1)::TSFrame
+    @eval function $fname(tsf::TSFrame, n::Integer=1)::TSFrame
         n >= 1 || throw(ArgumentError("n must be >= 1, got $n"))
         ep = endpoints(tsf, $PType(n))
         TSFrame(tsf.coredata[ep, :], :Index; issorted = true, copycols = false)

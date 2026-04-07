@@ -35,6 +35,9 @@ Columns that are not present are silently skipped. At least one must exist.
   - `:zero`      — fill gap rows with zero (typed via `zero(nonmissingtype(eltype(col)))`).
   - `<Real>`     — fill gap rows with that numeric constant (e.g. `fill_gaps=0.0`).
   - `:interpolate` — linear interpolation between surrounding non-missing values (numeric columns only).
+    Non-numeric columns are skipped with a `@warn` message and left as `missing`; this is intentional
+    to support mixed-type TSFrames where only numeric columns need interpolation. Unlike `:zero` and
+    constant fill (which throw on type mismatch), `:interpolate` is a best-effort strategy.
   **Note**: only *newly inserted* gap rows are affected; pre-existing `missing` values are preserved.
 - `fill_limit`: maximum number of consecutive gap rows to fill for `:ffill`/`:bfill`
   (default: `nothing` = no limit). Ignored for other strategies.
@@ -204,9 +207,10 @@ function _apply_ffill_gaps!(v::AbstractVector, is_gap::AbstractVector{Bool}, lim
                     consec += 1
                 end
             end
-        elseif !is_gap[i]
-            consec = 0  # reset on real (non-gap) data points
-        else  # is_gap[i] && !ismissing(v[i]): gap row already has value, reset run
+        else
+            # Reset consecutive count on real data points.
+            # Gap rows are always initialised to missing by _merge_sorted_with_gaps,
+            # so the branch `is_gap[i] && !ismissing(v[i])` is unreachable.
             consec = 0
         end
     end
@@ -223,9 +227,10 @@ function _apply_bfill_gaps!(v::AbstractVector, is_gap::AbstractVector{Bool}, lim
                     consec += 1
                 end
             end
-        elseif !is_gap[i]
-            consec = 0
-        else  # is_gap[i] && !ismissing(v[i]): gap row already has value, reset run
+        else
+            # Reset consecutive count on real data points.
+            # Gap rows are always initialised to missing by _merge_sorted_with_gaps,
+            # so the branch `is_gap[i] && !ismissing(v[i])` is unreachable.
             consec = 0
         end
     end

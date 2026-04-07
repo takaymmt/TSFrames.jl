@@ -153,14 +153,14 @@ TSFrames.describe(ts::TSFrame; cols=:) = TSFrames.describe(stdout, ts; cols=cols
 function describe(
     io::IO,
     ts::TSFrame,
-    stats::Union{Symbol, Pair{<:Base.Callable, <:Union{Symbol, AbstractString}}}...;
+    stats::Union{Symbol,Pair{<:Base.Callable,<:Union{Symbol,AbstractString}}}...;
     cols=:
 )
     DataFrames.describe(ts.coredata, stats...; cols=cols)
 end
 TSFrames.describe(
     ts::TSFrame,
-    stats::Union{Symbol, Pair{<:Base.Callable, <:Union{Symbol, AbstractString}}}...;
+    stats::Union{Symbol,Pair{<:Base.Callable,<:Union{Symbol,AbstractString}}}...;
     cols=:
 ) = TSFrames.describe(stdout, ts, stats...; cols=cols)
 
@@ -173,7 +173,7 @@ Base.show(ts::TSFrame) = show(stdout, ts)
 
 
 function Base.summary(io::IO, ts::TSFrame)
-    println("(", nr(ts), "×", nc(ts), ") TSFrame")
+    println(io, "(", nr(ts), "×", nc(ts), ") TSFrame")
 end
 
 # ============================================================
@@ -281,7 +281,12 @@ julia> first(TSFrame(1:10))
 ```
 """
 function Base.first(ts::TSFrame)
-    TSFrame(Base.first(ts.coredata,1))
+    TSFrame(Base.first(ts.coredata, 1))
+end
+
+function Base.first(ts::TSFrame, n::Integer)
+    n >= 0 || throw(ArgumentError("n must be non-negative"))
+    TSFrame(Base.first(ts.coredata, min(n, length(ts))))
 end
 
 
@@ -312,7 +317,7 @@ julia> head(TSFrame(1:100))
     10     10
 ```
 """
-function head(ts::TSFrame, n::Int = 10)
+function head(ts::TSFrame, n::Int=10)
     TSFrame(Base.first(ts.coredata, n))
 end
 
@@ -344,7 +349,12 @@ julia> tail(TSFrame(1:100))
    100    100
 ```
 """
-function tail(ts::TSFrame, n::Int = 10)
+function Base.last(ts::TSFrame, n::Integer)
+    n >= 0 || throw(ArgumentError("n must be non-negative"))
+    TSFrame(DataFrames.last(ts.coredata, min(n, length(ts))))
+end
+
+function tail(ts::TSFrame, n::Int=10)
     TSFrame(DataFrames.last(ts.coredata, n))
 end
 
@@ -509,7 +519,7 @@ function rename!(ts::TSFrame, colnames::AbstractVector{Symbol}; makeunique::Bool
     return ts
 end
 
-function rename!(ts::TSFrame, args::AbstractVector{Pair{Symbol, Symbol}})
+function rename!(ts::TSFrame, args::AbstractVector{Pair{Symbol,Symbol}})
     # should not be able to map Index to anything or map any other column to Index
     idx = findall(pair -> pair.first == :Index || pair.second == :Index, [pair for pair in args])
     if length(idx) > 0
@@ -521,13 +531,13 @@ function rename!(ts::TSFrame, args::AbstractVector{Pair{Symbol, Symbol}})
 end
 
 function rename!(ts::TSFrame,
-                 args::Union{AbstractVector{<:Pair{Symbol, <:AbstractString}},
-                             AbstractVector{<:Pair{<:AbstractString, Symbol}},
-                             AbstractVector{<:Pair{<:AbstractString, <:AbstractString}},
-                             AbstractDict{Symbol, Symbol},
-                             AbstractDict{Symbol, <:AbstractString},
-                             AbstractDict{<:AbstractString, Symbol},
-                             AbstractDict{<:AbstractString, <:AbstractString}})
+    args::Union{AbstractVector{<:Pair{Symbol,<:AbstractString}},
+        AbstractVector{<:Pair{<:AbstractString,Symbol}},
+        AbstractVector{<:Pair{<:AbstractString,<:AbstractString}},
+        AbstractDict{Symbol,Symbol},
+        AbstractDict{Symbol,<:AbstractString},
+        AbstractDict{<:AbstractString,Symbol},
+        AbstractDict{<:AbstractString,<:AbstractString}})
     rename!(ts, [Symbol(from) => Symbol(to) for (from, to) in args])
     return ts
 end
@@ -634,25 +644,25 @@ julia> isregular(ts, :month)
 false
 ```
 """
-function isregular(timestamps::AbstractVector{V}, unit::Symbol = :firstdiff) where {V<:TimeType}
+function isregular(timestamps::AbstractVector{V}, unit::Symbol=:firstdiff) where {V<:TimeType}
     s = size(timestamps, 1)
 
     if s == 1
         return false
     end
 
-    if unit==:firstdiff
-        time = timestamps[2]-timestamps[1]
+    if unit == :firstdiff
+        time = timestamps[2] - timestamps[1]
     else
         unit = Symbol(uppercasefirst(String(unit))) # make first letter of symbol uppercase
-        unitfunc = getfield(Dates,unit)
+        unitfunc = getfield(Dates, unit)
         time = gettimeperiod(timestamps[1], timestamps[2], unitfunc)
     end
 
     isregular(timestamps, time)
 end
 
-function isregular(timestamps::AbstractVector{V}, unit::T) where {V<:TimeType, T<:Dates.Period}
+function isregular(timestamps::AbstractVector{V}, unit::T) where {V<:TimeType,T<:Dates.Period}
     s = size(timestamps, 1)
 
     if s == 1
@@ -662,20 +672,20 @@ function isregular(timestamps::AbstractVector{V}, unit::T) where {V<:TimeType, T
         return false
     end
 
-    return (timestamps[1]:unit:timestamps[s])==timestamps
+    return (timestamps[1]:unit:timestamps[s]) == timestamps
 end
 
 #find number of units between start and end date
 function gettimeperiod(startdate, enddate, unit)
     try
-        return unit(max(length(startdate:unit(1):enddate)-1, 0))
+        return unit(max(length(startdate:unit(1):enddate) - 1, 0))
     catch e
         isa(e, MethodError) && return unit(0)
         rethrow()
     end
 end
 
-function isregular(ts::TSFrame, unit::Symbol = :firstdiff)
+function isregular(ts::TSFrame, unit::Symbol=:firstdiff)
     return isregular(index(ts), unit)
 end
 
@@ -704,24 +714,10 @@ for row in ts
 end
 ```
 """
-function Base.iterate(tsf::TSFrame)
-    iter = Tables.namedtupleiterator(tsf.coredata)
-    result = iterate(iter)
-    result === nothing && return nothing
-    (val, state) = result
-    return (val, (iter, state))
-end
-
-function Base.iterate(tsf::TSFrame, istate)
-    (iter, state) = istate
-    result = iterate(iter, state)
-    result === nothing && return nothing
-    (val, newstate) = result
-    return (val, (iter, newstate))
-end
-
+Base.iterate(tsf::TSFrame, state=1) = state > length(tsf) ? nothing : (tsf[state], state + 1)
 Base.IteratorSize(::Type{TSFrame}) = Base.HasLength()
-Base.IteratorEltype(::Type{TSFrame}) = Base.EltypeUnknown()
+Base.IteratorEltype(::Type{TSFrame}) = Base.HasEltype()
+Base.eltype(::Type{TSFrame}) = TSFrame
 
 # ============================================================
 # Section: Equality
@@ -759,9 +755,9 @@ end
     ep::Vector{Int},
     index_at::IA,
     n::Int,
-) where {V<:AbstractVector, IA<:Function}
+) where {V<:AbstractVector,IA<:Function}
     out = Vector{eltype(V)}(undef, n)
-    j   = 1
+    j = 1
     @inbounds for g in 1:n
         out[g] = index_at(@view idx[j:ep[g]])
         j = ep[g] + 1
@@ -779,26 +775,26 @@ end
     ep::Vector{Int},
     fn::F,
     n::Int,
-) where {V<:AbstractVector, F<:Function}
+) where {V<:AbstractVector,F<:Function}
     n == 0 && return eltype(V)[]
     first_val = fn(@view src[1:ep[1]])
     out_T = if eltype(V) >: Missing
         # Source has Missing in its element type — output must accommodate Missing.
         # If first_val is missing itself, use nonmissingtype(eltype(V)) as the base.
         base_T = first_val === missing ? nonmissingtype(eltype(V)) : typeof(first_val)
-        Union{Missing, base_T}
+        Union{Missing,base_T}
     else
         typeof(first_val)
     end
-    dst       = Vector{out_T}(undef, n)
-    dst[1]    = first_val
+    dst = Vector{out_T}(undef, n)
+    dst[1] = first_val
     j = ep[1] + 1
     @inbounds for g in 2:n
         val = fn(@view src[j:ep[g]])
         if !(val isa out_T)
             # Type promotion needed: rebuild dst with promoted type so a later
             # group whose return type differs from the first group still fits.
-            new_T = Union{Missing, promote_type(nonmissingtype(out_T), typeof(val))}
+            new_T = Union{Missing,promote_type(nonmissingtype(out_T), typeof(val))}
             new_dst = Vector{new_T}(undef, n)
             copyto!(new_dst, 1, dst, 1, g - 1)
             new_dst[g] = val

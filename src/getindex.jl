@@ -527,6 +527,8 @@ end
 
 # By string timestamp
 function Base.getindex(ts::TSFrame, i::String)
+    eltype(index(ts)) <: Union{Date, DateTime} ||
+        throw(ArgumentError("String indexing requires a Date or DateTime index, got $(eltype(index(ts)))"))
     d_date = Date(Dates.parse_components(i, Dates.dateformat"yyyy-mm-dd")...)
     d = eltype(index(ts)) <: DateTime ? DateTime(d_date) : d_date
     first_idx = _exact_index_or_throw(ts, d)
