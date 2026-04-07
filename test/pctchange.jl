@@ -71,3 +71,25 @@ end
 
     @test isequal(ts_mut[:, :x1], original_vals)
 end
+
+@testset "pctchange with negative previous values (abs denominator)" begin
+    # TSFrames uses abs(x_{t-k}) in the denominator, differing from pandas/R
+    # which use signed x_{t-k}. This test pins the current behavior.
+    ts = TSFrame(DataFrame(Index=1:3, val=[-2.0, 1.0, -4.0]))
+    result = pctchange(ts, 1)
+    @test ismissing(result[1, :val])
+    # (1.0 - (-2.0)) / abs(-2.0) = 3.0 / 2.0 = 1.5
+    @test result[2, :val] ≈ 1.5
+    # (-4.0 - 1.0) / abs(1.0) = -5.0 / 1.0 = -5.0
+    @test result[3, :val] ≈ -5.0
+
+    # Multi-period: periods=2
+    ts2 = TSFrame(DataFrame(Index=1:4, val=[-4.0, 2.0, -8.0, 6.0]))
+    result2 = pctchange(ts2, 2)
+    @test ismissing(result2[1, :val])
+    @test ismissing(result2[2, :val])
+    # (-8.0 - (-4.0)) / abs(-4.0) = -4.0 / 4.0 = -1.0
+    @test result2[3, :val] ≈ -1.0
+    # (6.0 - 2.0) / abs(2.0) = 4.0 / 2.0 = 2.0
+    @test result2[4, :val] ≈ 2.0
+end

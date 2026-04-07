@@ -463,14 +463,20 @@ end
 
 # Helper: filter rows where the tuple of period extractors applied to
 # the Index matches the given values.  Each extractor is the *type
-# constructor* used as a function (e.g. `Year`, `Month`).  Because the
-# extractor tuple and value tuple are fixed at each call-site the
-# compiler can constant-fold the tuple length, keeping the generated
-# code type-stable.
+# constructor* used as a function (e.g. `Year`, `Month`).  `_period_matches`
+# is `@generated` so the compiler unrolls the per-extractor comparisons at
+# compile time, eliminating the per-row tuple allocation that a runtime
+# generator would otherwise produce.
+@generated function _period_matches(extractors::E, values::V, x) where {E<:Tuple, V<:Tuple}
+    N = length(E.parameters)
+    N == 0 && return :true
+    exprs = [:(extractors[$i](x) == values[$i]) for i in 1:N]
+    return Expr(:&&, exprs...)
+end
+
 function _filter_by_period(ts::TSFrame, extractors::Tuple, values::Tuple)
-    sdf = filter(:Index => x -> Tuple(f(x) for f in extractors) == values,
-                 ts.coredata)
-    TSFrame(sdf)
+    sdf = filter(:Index => x -> _period_matches(extractors, values, x), ts.coredata)
+    TSFrame(sdf; issorted=true, copycols=false)
 end
 
 function Base.getindex(ts::TSFrame, y::Year)

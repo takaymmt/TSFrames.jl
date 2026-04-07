@@ -330,21 +330,66 @@ function _detect_gap_labels(idx, period::T, index_at::IA) where {T<:Dates.Period
     return gap_labels
 end
 
-# Build gap rows, widen result columns to Union{Missing,T}, and return sorted combined DataFrame.
-# Result columns are fresh allocations from _resample_core, safe to mutate in-place.
-function _insert_gap_rows!(result::TSFrame, gap_labels::AbstractVector)
-    gap_df = DataFrame(:Index => gap_labels)
-    for col in names(result.coredata, Not(:Index))
-        col_T = eltype(result.coredata[!, col])
+# Two-pointer sorted merge of result rows and gap labels.
+# Both inputs are already sorted, so we avoid O((n+g) log(n+g)) vcat+sort!.
+# Returns (combined::DataFrame, is_gap::BitVector) so callers can skip the
+# Set-based gap-row lookup in _apply_fill_to_gaps!.
+function _merge_sorted_with_gaps(coredata::DataFrame, gap_labels::AbstractVector)
+    isempty(gap_labels) && return (copy(coredata), falses(DataFrames.nrow(coredata)))
+
+    n = DataFrames.nrow(coredata)
+    g = length(gap_labels)
+    total = n + g
+
+    idx_col = coredata[!, :Index]
+    T_idx = eltype(idx_col)
+    new_idx = Vector{T_idx}(undef, total)
+    is_gap = falses(total)
+
+    data_cols = names(coredata, Not(:Index))
+    # Pre-allocate promoted columns (allow Missing for gap rows)
+    col_data = Dict{String, AbstractVector}()
+    for col in data_cols
+        v = coredata[!, col]
+        col_T = eltype(v)
         promoted_T = col_T >: Missing ? col_T : Union{Missing, col_T}
-        if !(col_T >: Missing)
-            result.coredata[!, col] = convert(Vector{promoted_T}, result.coredata[!, col])
-        end
-        gap_df[!, col] = Vector{promoted_T}(missing, length(gap_labels))
+        col_data[col] = Vector{promoted_T}(missing, total)
     end
-    combined = vcat(result.coredata, gap_df)
-    sort!(combined, :Index)
-    return combined
+
+    # Two-pointer sorted merge — stable: existing rows precede gap rows on ties.
+    i, j, k = 1, 1, 1
+    while i <= n && j <= g
+        if idx_col[i] <= gap_labels[j]
+            new_idx[k] = idx_col[i]
+            for col in data_cols
+                col_data[col][k] = coredata[i, col]
+            end
+            i += 1
+        else
+            new_idx[k] = gap_labels[j]
+            is_gap[k] = true
+            j += 1
+        end
+        k += 1
+    end
+    while i <= n
+        new_idx[k] = idx_col[i]
+        for col in data_cols
+            col_data[col][k] = coredata[i, col]
+        end
+        i += 1; k += 1
+    end
+    while j <= g
+        new_idx[k] = gap_labels[j]
+        is_gap[k] = true
+        j += 1; k += 1
+    end
+
+    combined = DataFrame(:Index => new_idx; copycols=false)
+    for col in data_cols
+        combined[!, col] = col_data[col]
+    end
+    return combined, is_gap
 end
 
 # Normalize fill_strategy: true (backward compat) → :missing.
@@ -361,13 +406,11 @@ function _normalize_fill_strategy(fill_strategy::Union{Bool,Symbol,<:Real})
 end
 
 # Apply fill strategy to gap rows only; pre-existing missing values are preserved.
-function _apply_fill_to_gaps!(combined::DataFrame, gap_labels::AbstractVector,
+# `is_gap` is supplied by `_merge_sorted_with_gaps`, eliminating the need for a
+# Set-based lookup over `gap_labels`.
+function _apply_fill_to_gaps!(combined::DataFrame, is_gap::AbstractVector{Bool},
                               effective::Union{Symbol,<:Real}, fill_limit::Union{Int,Nothing})
     effective === :missing && return
-
-    gap_label_set = Set(gap_labels)
-    idx_vec = combined[!, :Index]
-    is_gap = [idx_vec[i] in gap_label_set for i in 1:size(combined, 1)]
 
     # Pre-flight type validation for constant fill to avoid mid-mutation crash
     if effective isa Real
@@ -381,6 +424,18 @@ function _apply_fill_to_gaps!(combined::DataFrame, gap_labels::AbstractVector,
                     "fill_gaps: cannot fill column `$col` (element type $col_T) with value $effective"
                 ))
             end
+        end
+    end
+
+    # Pre-flight type validation for :zero — same UX as Real constant fill.
+    if effective === :zero
+        for col in names(combined, Not(:Index))
+            v = combined[!, col]
+            col_T = nonmissingtype(eltype(v))
+            col_T <: Number || throw(ArgumentError(
+                "fill_gaps=:zero: cannot fill column `$col` (element type $col_T) with zero; " *
+                "use :ffill, :bfill, or :missing instead"
+            ))
         end
     end
 
@@ -423,9 +478,9 @@ function _fill_period_gaps(
     gap_labels = _detect_gap_labels(idx, period, index_at)
     isempty(gap_labels) && return result
 
-    combined = _insert_gap_rows!(result, gap_labels)
+    combined, is_gap = _merge_sorted_with_gaps(result.coredata, gap_labels)
     effective = _normalize_fill_strategy(fill_strategy)
-    _apply_fill_to_gaps!(combined, gap_labels, effective, fill_limit)
+    _apply_fill_to_gaps!(combined, is_gap, effective, fill_limit)
 
     TSFrame(combined, :Index; issorted=true, copycols=false)
 end

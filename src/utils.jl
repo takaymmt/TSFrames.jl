@@ -257,7 +257,7 @@ julia> names(TSFrame([1:10 11:20]))
 """
 
 function names(ts::TSFrame)
-    names(ts.coredata[!, Not(:Index)])
+    names(ts.coredata, Not(:Index))
 end
 
 
@@ -691,13 +691,39 @@ end
 
 """
 # Iterators
-```julia
-Base.iterate(tsf::TSFrame)
 
-Returns a row-based iterator for `tsf`.
+    Base.iterate(tsf::TSFrame[, state])
+
+Row-based iterator. Each iteration yields a `NamedTuple` containing `:Index`
+and all data columns, backed by `Tables.namedtupleiterator`. This avoids
+materializing a single-row `TSFrame` per step (which was O(n) total
+allocations); the new implementation is O(1) allocations for the full loop.
+
+# Example
+```julia
+for row in ts
+    println(row.Index, " => ", row.x1)
+end
 ```
 """
-Base.iterate(tsf::TSFrame, state=1) = state > length(tsf) ? nothing : (tsf[state], state+1)
+function Base.iterate(tsf::TSFrame)
+    iter = Tables.namedtupleiterator(tsf.coredata)
+    result = iterate(iter)
+    result === nothing && return nothing
+    (val, state) = result
+    return (val, (iter, state))
+end
+
+function Base.iterate(tsf::TSFrame, istate)
+    (iter, state) = istate
+    result = iterate(iter, state)
+    result === nothing && return nothing
+    (val, newstate) = result
+    return (val, (iter, newstate))
+end
+
+Base.IteratorSize(::Type{TSFrame}) = Base.HasLength()
+Base.IteratorEltype(::Type{TSFrame}) = Base.EltypeUnknown()
 
 # ============================================================
 # Section: Equality

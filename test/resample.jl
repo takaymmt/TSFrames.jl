@@ -1613,3 +1613,22 @@ end
     ))
     @test_throws ArgumentError resample(ts, Day(1); fill_gaps=0)
 end
+
+@testset "fill_gaps :zero and constant fill on non-numeric columns" begin
+    ts_str = TSFrame(DataFrame(
+        Index = [Date(2020, 1, 1), Date(2020, 3, 1)],
+        label = ["a", "b"],
+    ))
+    # :zero on String column must throw ArgumentError
+    @test_throws ArgumentError resample(ts_str, Month(1), :label => first; fill_gaps=:zero)
+    # Real constant on String column must throw ArgumentError
+    @test_throws ArgumentError resample(ts_str, Month(1), :label => first; fill_gaps=0)
+
+    # :ffill on String column should work (forward-fill the string value)
+    r_ffill = resample(ts_str, Month(1), :label => first; fill_gaps=:ffill)
+    @test r_ffill[2, :label] == "a"  # Feb gap forward-filled from Jan
+
+    # :bfill on String column should work (backward-fill the string value)
+    r_bfill = resample(ts_str, Month(1), :label => first; fill_gaps=:bfill)
+    @test r_bfill[2, :label] == "b"  # Feb gap backward-filled from Mar
+end

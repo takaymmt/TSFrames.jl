@@ -328,24 +328,39 @@ TSFrames.rename!(uppercase, ts)
     end
     @test count == 3
 
-    # each yielded item is a single-row TSFrame
+    # each yielded item is a NamedTuple with :Index and data columns
     first_item = first(collect(ts_iter))
-    @test first_item isa TSFrame
-    @test TSFrames.nrow(first_item) == 1
+    @test first_item isa NamedTuple
+    @test :Index in keys(first_item)
+    @test :a in keys(first_item)
+    @test :b in keys(first_item)
 
     # collect works and returns the correct number of elements
     collected = collect(ts_iter)
     @test length(collected) == 3
 
     # collected elements have correct data
-    @test collected[1].coredata[1, :a] == "10"  || collected[1].coredata[1, :a] == 10
-    @test collected[3].coredata[1, :a] == "30"  || collected[3].coredata[1, :a] == 30
+    @test collected[1].Index == 1
+    @test collected[1].a == 10
+    @test collected[1].b == 1.0
+    @test collected[3].Index == 3
+    @test collected[3].a == 30
+    @test collected[3].b == 3.0
 
-    # iterate on empty-like single row TSFrame
+    # row-based iteration with field access
+    sum_a = 0
+    for row in ts_iter
+        sum_a += row.a
+    end
+    @test sum_a == 60
+
+    # iterate on single-row TSFrame
     ts_single = TSFrame(DataFrame(x=[42]), [1])
     items = collect(ts_single)
     @test length(items) == 1
-    @test TSFrames.nrow(items[1]) == 1
+    @test items[1] isa NamedTuple
+    @test items[1].Index == 1
+    @test items[1].x == 42
 end
 ###
 
