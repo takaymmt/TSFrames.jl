@@ -9,7 +9,8 @@ Converts `ts` into an object of higher frequency than the original (ex.
 from monthly series to daily.) `period` is any of `Period` types in the
 `Dates` module.
 
-By default, the added rows contain `missing` data.
+By default, the added rows contain `missing` data. Returns an empty `TSFrame`
+when `ts` is empty. Throws `DomainError` if `period.value <= 0`.
 
 # Examples
 ```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
@@ -69,7 +70,6 @@ DateTime             Float64?
 2018-03-10T00:00:00        0.0338698
                     859 rows omitted
 """
-
 function upsample(ts::TSFrame, period::T) where {T<:Union{DatePeriod, TimePeriod}}
     # Empty guard: return a fresh empty TSFrame (no aliasing of input).
     if isempty(index(ts))

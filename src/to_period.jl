@@ -5,7 +5,7 @@ Set of convenience methods for frequency conversion of `TimeType`
 index types. Internally, they call `endpoints()` to do the actual
 conversion. `n` is the number of periods of the `period` type. For
 example, `to_monthly(tsf, 2)` will resample the time series to "every
-2 months".
+2 months". Throws `ArgumentError` if `n < 1`.
 
 ```julia
 to_period(tsf::TSFrame, period::T)::TSFrame where {T<:Period}

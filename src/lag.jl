@@ -8,6 +8,11 @@ Lag the `ts` object by the specified `lag_value`. The rows corresponding
 to lagged values will be rendered as `missing`. Negative values of lag are
 also accepted (see `TSFrames.lead`).
 
+!!! note "Clamped inputs"
+    If `lag_value` is `typemin(Int)` or `typemax(Int)`, the value is clamped to
+    `±nrow(ts)` to avoid integer overflow. The entire column is filled with
+    `missing`.
+
 # Examples
 ```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
 julia> using Random, Statistics;

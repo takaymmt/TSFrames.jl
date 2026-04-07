@@ -284,6 +284,14 @@ function Base.first(ts::TSFrame)
     TSFrame(Base.first(ts.coredata, 1))
 end
 
+"""
+    Base.first(ts::TSFrame, n::Integer)
+
+Return the first `n` rows of `ts` as a `TSFrame`. If `n` exceeds the number of
+rows, all rows are returned. Throws `ArgumentError` if `n < 0`.
+
+See also: [`head`](@ref), [`Base.last`](@ref).
+"""
 function Base.first(ts::TSFrame, n::Integer)
     n >= 0 || throw(ArgumentError("n must be non-negative"))
     TSFrame(Base.first(ts.coredata, min(n, length(ts))))
@@ -323,6 +331,19 @@ end
 
 
 """
+    Base.last(ts::TSFrame, n::Integer)
+
+Return the last `n` rows of `ts` as a `TSFrame`. If `n` exceeds the number of
+rows, all rows are returned. Throws `ArgumentError` if `n < 0`.
+
+See also: [`tail`](@ref), [`Base.first`](@ref).
+"""
+function Base.last(ts::TSFrame, n::Integer)
+    n >= 0 || throw(ArgumentError("n must be non-negative"))
+    TSFrame(DataFrames.last(ts.coredata, min(n, length(ts))))
+end
+
+"""
 # Tail
 ```julia
 tail(ts::TSFrame, n::Int = 10)
@@ -349,11 +370,6 @@ julia> tail(TSFrame(1:100))
    100    100
 ```
 """
-function Base.last(ts::TSFrame, n::Integer)
-    n >= 0 || throw(ArgumentError("n must be non-negative"))
-    TSFrame(DataFrames.last(ts.coredata, min(n, length(ts))))
-end
-
 function tail(ts::TSFrame, n::Int=10)
     TSFrame(DataFrames.last(ts.coredata, n))
 end
@@ -702,15 +718,12 @@ end
 
     Base.iterate(tsf::TSFrame[, state])
 
-Row-based iterator. Each iteration yields a `NamedTuple` containing `:Index`
-and all data columns, backed by `Tables.namedtupleiterator`. This avoids
-materializing a single-row `TSFrame` per step (which was O(n) total
-allocations); the new implementation is O(1) allocations for the full loop.
+Row-based iterator. Each iteration yields a single-row `TSFrame`.
 
 # Example
 ```julia
 for row in ts
-    println(row.Index, " => ", row.x1)
+    println(index(row), " => ", row[:, :x1])
 end
 ```
 """

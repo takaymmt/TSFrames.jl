@@ -11,6 +11,8 @@ of rows to be shifted over. The skipped rows are rendered as `missing`.
 
 `pctchange` returns an error if column type does not have the method `/`.
 
+Throws `ArgumentError` if `periods` is not a positive integer (i.e. `periods ≤ 0`).
+
 # Computation
 
 This implementation uses the absolute value of the lagged element in

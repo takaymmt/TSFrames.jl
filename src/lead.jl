@@ -8,6 +8,11 @@ Similar to lag, this method leads the `ts` object by `lead_value`. The
 lead rows are inserted with `missing`. Negative values of lead are
 also accepted (see `TSFrames.lag`).
 
+!!! note "Clamped inputs"
+    If `lead_value` is `typemin(Int)` or `typemax(Int)`, the value is clamped to
+    `±nrow(ts)` to avoid integer overflow. The entire column is filled with
+    `missing`.
+
 # Examples
 ```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
 julia> using Random, Statistics;

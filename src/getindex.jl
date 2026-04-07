@@ -15,6 +15,11 @@ output, use the constructor: `Matrix(ts)`.
 
 For fetching the index column vector use the `index()` method.
 
+!!! note "String index requires `Date`/`DateTime` index"
+    Indexing by an ISO-formatted date string (e.g. `ts["2007-04-10"]`) is only
+    supported when the `TSFrame` index is `Date` or `DateTime`. Passing a string
+    to an integer-indexed `TSFrame` throws `ArgumentError`.
+
 # Examples
 
 ```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)

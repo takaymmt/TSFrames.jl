@@ -8,6 +8,9 @@ subset(ts::TSFrame, from::T, to::T) where {T<:Union{Integer, TimeType}}
 Create a subset of `ts` based on the `Index` starting `from`
 (inclusive) till `to` (inclusive).
 
+Throws `ArgumentError` if the element type of the index does not match `T`
+(e.g. passing `Date` endpoints to an `Int`-indexed `TSFrame`).
+
 # Examples
 ```jldoctest; setup = :(using TSFrames, DataFrames, Dates, Random, Statistics)
 julia> using Random;

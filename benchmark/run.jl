@@ -100,10 +100,10 @@ end
 function run_benchmarks(config)
     log_msg("Loading benchmark suite...")
 
-    # Load the suite
+    # Load the suite (include defines SUITE in a new world; use invokelatest to access it)
     include(joinpath(@__DIR__, "benchmarks.jl"))
 
-    suite = SUITE
+    suite = Base.invokelatest(() -> SUITE)
 
     # Filter groups if requested
     if config[:groups] !== nothing
