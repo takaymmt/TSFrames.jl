@@ -727,7 +727,11 @@ for row in ts
 end
 ```
 """
-Base.iterate(tsf::TSFrame, state=1) = state > length(tsf) ? nothing : (tsf[state], state + 1)
+function Base.iterate(tsf::TSFrame, state::Int=1)
+    state > DataFrames.nrow(tsf.coredata) && return nothing
+    row_df = tsf.coredata[state:state, :]
+    return (TSFrame(row_df, :Index; issorted=true, copycols=false), state + 1)
+end
 Base.IteratorSize(::Type{TSFrame}) = Base.HasLength()
 Base.IteratorEltype(::Type{TSFrame}) = Base.HasEltype()
 Base.eltype(::Type{TSFrame}) = TSFrame

@@ -227,8 +227,9 @@ function run_report(files; output=nothing)
     end
 
     # Delegate to analysis/report.jl
+    # (include defines generate_report in a new world; use invokelatest lambda to access it)
     include(joinpath(@__DIR__, "analysis", "report.jl"))
-    Base.invokelatest(generate_report, files; output=output)
+    Base.invokelatest(() -> generate_report(files; output=output))
 end
 
 # ── Main ─────────────────────────────────────────────────────────────────────
