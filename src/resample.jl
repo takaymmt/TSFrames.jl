@@ -397,6 +397,10 @@ function _fill_period_gaps(
     idx = index(ts)
     isempty(idx) && return result
 
+    eltype(idx) <: Union{Date,DateTime} || throw(ArgumentError(
+        "fill_gaps requires a Date or DateTime index; got $(eltype(idx))"
+    ))
+
     gap_labels = _detect_gap_labels(idx, period, index_at)
     isempty(gap_labels) && return result
 

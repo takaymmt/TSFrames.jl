@@ -1598,3 +1598,10 @@ end
         end
     end
 end
+
+@testset "fill_gaps with Time index throws ArgumentError" begin
+    times = [Dates.Time(1, 0, 0), Dates.Time(2, 0, 0), Dates.Time(4, 0, 0)]
+    ts_time = TSFrame(DataFrame(val = [1.0, 2.0, 3.0]), times)
+    @test_throws ArgumentError resample(ts_time, Dates.Minute(60); fill_gaps=true)
+    @test_throws ArgumentError resample(ts_time, Dates.Minute(60), :val => sum; fill_gaps=true)
+end

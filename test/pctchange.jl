@@ -60,3 +60,14 @@ end
     @test TSFrames.nrow(pct_single) == 1
     @test ismissing(pct_single[1, :x1])
 end
+
+@testset "pctchange does not mutate source TSFrame" begin
+    dates_mut = Date(2007, 1, 1) .+ Day.(0:4)
+    vals = [100.0, 110.0, 121.0, 133.1, 146.41]
+    ts_mut = TSFrame(DataFrame(Index = dates_mut, x1 = copy(vals)))
+    original_vals = copy(ts_mut[:, :x1])
+
+    _ = pctchange(ts_mut)
+
+    @test isequal(ts_mut[:, :x1], original_vals)
+end
