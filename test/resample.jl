@@ -928,7 +928,9 @@ end
         label = [string("row_", i) for i in 1:nstr]
     ), dates_str)
 
-    r_str = resample(ts_str, Month(1), :label => first; fill_gaps=:interpolate)
+    r_str = @test_logs (:warn, r"resample: :interpolate fill skipped for non-numeric column") begin
+        resample(ts_str, Month(1), :label => first; fill_gaps=:interpolate)
+    end
     feb_idx_str = findfirst(==(Date(2020,2,1)), index(r_str))
     @test feb_idx_str !== nothing
     @test ismissing(r_str.coredata[feb_idx_str, :label])  # non-numeric → stays missing
