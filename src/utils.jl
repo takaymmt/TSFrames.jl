@@ -173,7 +173,7 @@ Base.show(ts::TSFrame) = show(stdout, ts)
 
 
 function Base.summary(io::IO, ts::TSFrame)
-    println("(", nr(ts), " x ", nc(ts), ") TSFrame")
+    println("(", nr(ts), "×", nc(ts), ") TSFrame")
 end
 
 # ============================================================
@@ -668,13 +668,11 @@ end
 #find number of units between start and end date
 function gettimeperiod(startdate, enddate, unit)
     try
-        return unit(max(length(startdate:unit(1):enddate)-1,0))
+        return unit(max(length(startdate:unit(1):enddate)-1, 0))
     catch e
-        if isa(e, MethodError)
-            return 0
-        end
+        isa(e, MethodError) && return unit(0)
+        rethrow()
     end
-
 end
 
 function isregular(ts::TSFrame, unit::Symbol = :firstdiff)

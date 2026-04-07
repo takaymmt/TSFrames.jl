@@ -247,7 +247,10 @@ function _apply_interpolate_gaps!(combined::DataFrame, is_gap::AbstractVector{Bo
     for col in names(combined, Not(:Index))
         v = combined[!, col]
         ElemT = nonmissingtype(eltype(v))
-        ElemT <: Number || continue  # skip non-numeric columns
+        if !(ElemT <: Number)
+            @warn "resample: :interpolate fill skipped for non-numeric column $(col) (eltype=$(eltype(v)))"
+            continue
+        end
         _interpolate_column!(v, idx_col, is_gap, ElemT)
     end
 end

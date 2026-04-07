@@ -534,10 +534,6 @@ function Base.getindex(ts::TSFrame, i::String)
     ts[first_idx:last_idx]
 end
 
-# By {TimeType, Period} range
-# function Base.getindex(ts::TSFrame, r::StepRange{T, V}) where {T<:TimeType, V<:Period}
-# end
-
 ###
 ## Column indexing with Colon
 ###

@@ -329,7 +329,6 @@ function endpoints(timestamps::AbstractVector{T}, on::V)::Vector{Int} where {T<:
 
     # store the next value of the period (on), use it for comparison
     # with values in the series (timestamps)
-    nextval = eltype(timestamps)(1)
     if (typeof(on) == Week)
         nextval = floor(first(timestamps), typeof(on)) + on
     else

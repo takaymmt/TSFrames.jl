@@ -57,7 +57,7 @@ TSFrame(IndexType::DataType; n::Int=1)
 TSFrame(IndexType::DataType, cols::Vector{Tuple{DataType, S}}; issorted = false, copycols = true) where S <: Union{Symbol, String}
 ```
 
-When `issorted` is `true``, no sort operations are performed on the input.
+When `issorted` is `true`, no sort operations are performed on the input.
 When `copycols` is `true` (default), the inputs are copied into the TSFrame.
 When `copycols` is `false`, the inputs are not copied but placed directly in the TSFrame.
 This can be dangerous, so please only set `copycols` to `false` if the input arrays
@@ -418,7 +418,8 @@ function TSFrame(coredata::AbstractVector{T}; colnames=:auto, issorted = false, 
 end
 
 # From Matrix and meta
-# FIXME: use Metadata.jl
+# FIXME: use Metadata.jl to store colnames as DataFrame metadata so they survive
+# round-trips through the constructor.  Tracked in TSFrames.jl issue #<TBD>.
 function TSFrame(coredata::AbstractArray{T,2}; colnames=:auto, issorted = false, copycols = true) where {T}
     index_vals = collect(Base.OneTo(size(coredata)[1]))
     df = DataFrame(coredata, colnames, copycols=copycols)

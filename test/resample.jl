@@ -1091,10 +1091,8 @@ end
     @test r_last_z.coredata[feb_idx_lz, :Volume] == 0
 
     # ── :interpolate with index_at=last ──────────────────────────────────
-    # NOTE: Use explicit Float pairs to avoid InexactError on Int columns (Volume).
-    # The implementation's _apply_interpolate_gaps! produces Float results for all
-    # numeric columns; Int columns trigger InexactError — this is a known limitation
-    # (implementation bug) that should be fixed in src/resample.jl.
+    # Use explicit Float pairs; Int columns are handled via round(ElemT, ...) in
+    # _interpolate_column!, so no InexactError occurs.
     r_last_ip = resample(ts_il, Month(1), :Open => first, :Close => last;
                          fill_gaps=:interpolate, index_at=last)
     feb_idx_lip = findfirst(==(Date(2020,2,29)), index(r_last_ip))
